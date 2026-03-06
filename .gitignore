@@ -1,5 +1,7 @@
 # Security - NEVER commit these
 config.json
+config_REDACTED.json
+*.json
 *.env
 .env
 
