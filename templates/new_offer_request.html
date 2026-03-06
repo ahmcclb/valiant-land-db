@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Offer Request - Valiant Land</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/new_offer_request.css') }}">
+</head>
+<body>
+    <div class="header-bar">
+        <a href="/" class="logo-link">
+            <img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+                 alt="Valiant Land Logo" class="logo">
+        </a>
+        <h1 class="site-title">New Offer Request</h1>
+    </div>
+
+    <div class="container" id="new-offer-request">
+        <form id="offer-form" novalidate>
+		    <!-- Hidden status field - always set to "Pending Preliminary Research" -->
+			<input type="hidden" id="p_status_id" name="p_status_id" value="3">
+			<!-- Hidden field to track if we're editing an existing property -->
+			<input type="hidden" id="editing_p_id" name="editing_p_id" value="">
+                <h2 class="intro-question">Thank you for calling us regarding your property!</h2>
+            <p class="intro-text">Before we can present you with an offer I would like to ask you some questions about the property.</p>
+
+            <!-- Viability -->
+            <div class="section">
+                <h3>Just for suitability purposes, would you say you reached out to us just looking to see what your land is worth, or are you seriously looking to sell it now?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle active" data-value="1">Seriously Looking to Sell</button>
+                    <button type="button" class="btn-toggle" data-value="0">Just Checking Value</button>
+                </div>
+                <input type="hidden" id="p_viable" name="p_viable" value="1">
+            </div>
+
+            <!-- Property Size -->
+            <div class="section">
+                <h3>What size is the property?</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_acres">Acres:</label>
+                        <input type="number" id="p_acres" name="p_acres" step="0.0001" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_sqft">Square Feet:</label>
+                        <input type="number" id="p_sqft" name="p_sqft" step="1" placeholder="0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Caller Information -->
+            <div class="section">
+                <h3>What is your name?</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="or_fname">First Name:*</label>
+                        <input type="text" id="or_fname" name="or_fname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_lname">Last Name:*</label>
+                        <input type="text" id="or_lname" name="or_lname" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Owner of Record -->
+            <div class="section">
+                <h3>Are you the owner of record?</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="o_fname">Owner's First Name:*</label>
+                        <input type="text" id="o_fname" name="o_fname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="o_lname">Owner's Last Name:*</label>
+                        <input type="text" id="o_lname" name="o_lname" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multiple Owners -->
+            <div class="section">
+                <h3>Is there someone else on title?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle" data-value="1">Yes</button>
+                    <button type="button" class="btn-toggle active" data-value="0">No</button>
+                </div>
+                <input type="hidden" id="o_other_owners" name="o_other_owners" value="0">
+                
+                <div id="additional-owners" class="conditional-section" style="display: none;">
+                    <!-- 2nd Owner -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="o_2fname">2nd Owner's First Name:</label>
+                            <input type="text" id="o_2fname" name="o_2fname">
+                        </div>
+                        <div class="form-group">
+                            <label for="o_2lname">2nd Owner's Last Name:</label>
+                            <input type="text" id="o_2lname" name="o_2lname">
+                        </div>
+                    </div>
+                    <!-- 3rd Owner -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="o_3fname">3rd Owner's First Name:</label>
+                            <input type="text" id="o_3fname" name="o_3fname">
+                        </div>
+                        <div class="form-group">
+                            <label for="o_3lname">3rd Owner's Last Name:</label>
+                            <input type="text" id="o_3lname" name="o_3lname">
+                        </div>
+                    </div>
+                    <!-- 4th Owner -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="o_4fname">4th Owner's First Name:</label>
+                            <input type="text" id="o_4fname" name="o_4fname">
+                        </div>
+                        <div class="form-group">
+                            <label for="o_4lname">4th Owner's Last Name:</label>
+                            <input type="text" id="o_4lname" name="o_4lname">
+                        </div>
+                    </div>
+                    <!-- 5th Owner -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="o_5fname">5th Owner's First Name:</label>
+                            <input type="text" id="o_5fname" name="o_5fname">
+                        </div>
+                        <div class="form-group">
+                            <label for="o_5lname">5th Owner's Last Name:</label>
+                            <input type="text" id="o_5lname" name="o_5lname">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Company Ownership -->
+            <div class="section">
+                <h3>Is the property owned by a company?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle" data-value="Company">Yes</button>
+                    <button type="button" class="btn-toggle active" data-value="Individual">No</button>
+                </div>
+                <input type="hidden" id="o_type" name="o_type" value="Individual">
+                
+                <div id="company-fields" class="conditional-section" style="display: none;">
+                    <div class="form-group">
+                        <label for="o_company">Company Name:*</label>
+                        <input type="text" id="o_company" name="o_company">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact Information -->
+            <div class="section">
+                <h3>What is a good phone number that we can reach you at if we have any additional questions in the future?</h3>
+                <div class="form-group">
+                    <label for="or_phone">Phone Number:</label>
+                    <input type="tel" id="or_phone" name="or_phone">
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Do you have an email address that you use frequently?</h3>
+                <div class="form-group">
+                    <label for="or_email">Email Address:</label>
+                    <input type="email" id="or_email" name="or_email">
+                </div>
+            </div>
+
+            <!-- Mailing Address -->
+            <div class="section">
+                <h3>Let me verify the information that we have. Is this address correct?</h3>
+                <div class="form-group">
+                    <label for="or_m_address">Mailing Address:*</label>
+                    <input type="text" id="or_m_address" name="or_m_address" required>
+                </div>
+                <div class="form-group">
+                    <label for="or_m_address2">Mailing Address 2:</label>
+                    <input type="text" id="or_m_address2" name="or_m_address2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="or_m_city">City:*</label>
+                        <input type="text" id="or_m_city" name="or_m_city" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_m_state">State:*</label>
+                        <select id="or_m_state" name="or_m_state" required>
+                            <option value="">Select One...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_m_zip">Zip Code:*</label>
+                        <input type="text" id="or_m_zip" name="or_m_zip" pattern="[0-9]{5}(-[0-9]{4})?" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Property Details -->
+            <div class="section">
+                <h3>Property Information</h3>
+                <div class="form-group">
+                    <label for="p_apn">APN (Parcel Number):*</label>
+                    <input type="text" id="p_apn" name="p_apn" required readonly>
+                </div>
+                <div class="form-group">
+                    <label for="p_address">Property Address (or Lat/Long):</label>
+                    <input type="text" id="p_address" name="p_address">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_city">Property City:</label>
+                        <input type="text" id="p_city" name="p_city">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_state">Property State:</label>
+                        <select id="p_state" name="p_state">
+                            <option value="">Select One...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_zip">Property Zip:</label>
+                        <input type="text" id="p_zip" name="p_zip">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="p_county">Property County:*</label>
+                    <input type="text" id="p_county" name="p_county" required>
+                </div>
+            </div>
+
+            <!-- HOA -->
+            <div class="section">
+                <h3>Is there an HOA/POA in this area? If so, what is the annual fee?</h3>
+                <div class="form-group">
+                    <label for="p_hoa">Annual HOA/POA Fee:</label>
+                    <input type="number" id="p_hoa" name="p_hoa" step="0.01" placeholder="0.00">
+                </div>
+            </div>
+
+            <!-- Free and Clear -->
+            <div class="section">
+                <h3>Do you own the property free and clear?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle active" data-value="1">Yes</button>
+                    <button type="button" class="btn-toggle" data-value="0">No</button>
+                </div>
+                <input type="hidden" id="free_clear" value="1">
+                
+                <div id="lien-section" class="conditional-section" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="p_liens">Loan/Mortgage or Liens:</label>
+                            <input type="number" id="p_liens" name="p_liens" step="0.01" placeholder="0.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="p_back_tax">Back Taxes:</label>
+                            <input type="number" id="p_back_tax" name="p_back_tax" step="0.01" placeholder="0.00">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Improvements -->
+            <div class="section">
+                <h3>Are there any improvements on the property?</h3>
+                <div class="improvements-grid">
+                    <label><input type="checkbox" value="Cabin"> Cabin</label>
+                    <label><input type="checkbox" value="Shed"> Shed</label>
+                    <label><input type="checkbox" value="Mobile Home"> Mobile Home</label>
+                    <label><input type="checkbox" value="RV Hookup"> RV Hookup</label>
+                    <label><input type="checkbox" value="Septic System"> Septic System</label>
+                    <label><input type="checkbox" value="Well"> Well</label>
+                    <label><input type="checkbox" value="Fence"> Fence</label>
+                    <label>Other: <input type="text" id="p_improvements_other" placeholder="Describe other improvements"></label>
+                </div>
+                <input type="hidden" id="p_improvements" name="p_improvements">
+            </div>
+
+            <!-- Power & Access -->
+            <div class="section">
+                <h3>Is there electricity to the property?</h3>
+                <div class="form-group">
+                    <select id="p_power" name="p_power">
+                        <option value="">Select</option>
+                        <option value="Yes">Yes</option>
+                        <option value="Within 1/4 mile">Within 1/4 mile</option>
+                        <option value="Within 1 mile">Within 1 mile</option>
+                        <option value="No">No</option>
+                    </select>
+                </div>
+                
+                <h3>Does the property have road access?</h3>
+                <div class="form-group">
+                    <select id="p_access" name="p_access">
+                        <option value="">Select</option>
+                        <option value="Yes - Paved">Yes - Paved</option>
+                        <option value="Yes - Unpaved">Yes - Unpaved</option>
+                        <option value="Legal and Physical Access">Legal and Physical Access</option>
+                        <option value="Legal Access Only">Legal Access Only</option>
+                        <option value="Physical Access Only">Physical Access Only</option>
+                        <option value="Easement">Easement</option>
+                        <option value="No">No</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Flood Zone -->
+            <div class="section">
+                <h3>Is the property in a Flood Zone?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle" data-value="Yes">Yes</button>
+                    <button type="button" class="btn-toggle" data-value="No">No</button>
+                    <button type="button" class="btn-toggle active" data-value="Unknown">Unknown</button>
+                </div>
+                <input type="hidden" id="p_flood" name="p_flood" value="Unknown">
+                
+                <div id="flood-description-section" class="conditional-section" style="display: none;">
+                    <div class="form-group">
+                        <label for="p_flood_description">Flood Zone Description:</label>
+                        <input type="text" id="p_flood_description" name="p_flood_description">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Survey -->
+            <div class="section">
+                <h3>Do you have a survey?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle" data-value="1">Yes</button>
+                    <button type="button" class="btn-toggle active" data-value="0">No</button>
+                </div>
+                <input type="hidden" id="p_survey" name="p_survey" value="0">
+            </div>
+
+            <!-- Ownership History -->
+            <div class="section">
+                <h3>How long have you owned the property?</h3>
+                <div class="form-group">
+                    <input type="text" id="p_owned" name="p_owned" placeholder="e.g., 5 years">
+                </div>
+                
+                <h3>How did you acquire this property?</h3>
+                <div class="form-group">
+                    <select id="p_aquired" name="p_aquired">
+                        <option value="">Select...</option>
+                        <option value="Purchased">Purchased</option>
+                        <option value="Inherited">Inherited</option>
+                        <option value="Gifted">Gifted</option>
+                        <option value="Probate Needed">Probate Needed</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Value -->
+            <div class="section">
+                <h3>Owner's Estimated Property Value:</h3>
+                <div class="form-group">
+                    <input type="number" id="p_est_value" name="p_est_value" step="0.01" placeholder="0.00">
+                </div>
+                
+                <h3>If we can pay cash, what would be the least that you would take for the property?</h3>
+                <div class="form-group">
+                    <input type="number" id="p_min_acceptable_offer" name="p_min_acceptable_offer" step="0.01" placeholder="0.00">
+                </div>
+            </div>
+
+            <!-- Listed with Realtor -->
+            <div class="section">
+                <h3>Is the property currently listed with a Realtor?</h3>
+                <div class="button-group">
+                    <button type="button" class="btn-toggle" data-value="1">Yes</button>
+                    <button type="button" class="btn-toggle active" data-value="0">No</button>
+                </div>
+                <input type="hidden" id="p_listed" name="p_listed" value="0">
+                
+                <div id="agent-section" class="conditional-section" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="p_agent_name">Seller Agent's Name or Company:</label>
+                            <input type="text" id="p_agent_name" name="p_agent_name">
+                        </div>
+                        <div class="form-group">
+                            <label for="p_agent_phone">Seller Agent's Phone Number:</label>
+                            <input type="tel" id="p_agent_phone" name="p_agent_phone">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comments -->
+            <div class="section">
+                <h3>Caller's Comments:</h3>
+                <div class="form-group">
+                    <textarea id="p_comments" name="p_comments" rows="4" placeholder="Enter caller's comments here..."></textarea>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>My Notes:</h3>
+                <div class="form-group">
+                    <textarea id="p_note" name="p_note" rows="4" placeholder="Enter your notes here..."></textarea>
+                </div>
+            </div>
+
+            <!-- Closing Statement -->
+            <div class="section closing-statement">
+                <p><strong>Closing Statement:</strong></p>
+                <p>At this point we will need to complete some detailed research on your property. Once the research has been finalized, we will mail you a no-obligation written offer within 7-10 business days, so you have something official in writing that you can review.</p>
+                <p>Thank you very much for your call and you will be hearing from us soon.</p>
+            </div>
+
+            <!-- Submit -->
+            <div class="form-buttons">
+                <button type="button" id="cancel-btn" class="btn-cancel">Cancel</button>
+                <button type="submit" id="submit-btn" class="btn-success">Update Record</button>
+            </div>
+			
+        </form>
+    </div>
+
+    <script>
+        window.STATIC_URL = '{{ url_for('static', filename='') }}';
+    </script>
+    <script src="{{ url_for('static', filename='js/new_offer_request.js') }}"></script>
+</body>
+</html>

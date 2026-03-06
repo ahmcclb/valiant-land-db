@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Data - Valiant Land</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <style>
+        .import-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .file-upload-area {
+            border: 3px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background: #f9f9f9;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .file-upload-area:hover {
+            border-color: #007bff;
+            background: #f0f8ff;
+        }
+        .file-upload-area.has-file {
+            border-color: #28a745;
+            background: #f0fff0;
+        }
+        .mode-selection {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 6px;
+        }
+        .mode-option {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 4px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-option:hover {
+            border-color: #007bff;
+        }
+        .mode-option.selected {
+            border-color: #007bff;
+            background: #e7f3ff;
+        }
+        .mode-option input[type="radio"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        .checkbox-option {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+        }
+        .checkbox-option label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .checkbox-option input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        .import-btn {
+            background: #007bff;
+            color: white;
+            padding: 15px 40px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .import-btn:hover {
+            background: #0056b3;
+        }
+        .import-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .results-area {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 6px;
+            display: none;
+        }
+        .results-area.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            display: block;
+        }
+        .results-area.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            display: block;
+        }
+        .error-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0,0,0,0.05);
+            border-radius: 4px;
+        }
+        .error-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-left: 3px solid #dc3545;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .template-download {
+            margin: 20px 0;
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-bar">
+        <a href="/" class="logo-link">
+            <img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+                 alt="Valiant Land Logo" class="logo">
+        </a>
+        <h1 class="site-title">Valiant Land Real Estate Database</h1>
+    </div>
+
+    <div class="import-container">
+        <a href="/" class="back-link">← Back to Dashboard</a>
+        
+        <h1>Bulk Data Import</h1>
+        <p>Upload a CSV or Excel (.xlsx) file to import property records. All records must be valid for the import to succeed.</p>
+        
+        <div class="template-download">
+            <strong>Required Format:</strong> The file must include headers. 
+            <a href="/api/import/template" target="_blank">Download CSV Template</a> | 
+            <a href="/api/import/template/xlsx" target="_blank">Download Excel Template</a>
+            <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                <strong>Tip:</strong> Use Excel (.xlsx) format to prevent long APN numbers from converting to scientific notation.
+            </p>
+        </div>
+
+        <div class="file-upload-area" id="drop-zone">
+            <input type="file" id="csv-file" accept=".csv,.xlsx" style="display: none;">
+            <div id="upload-prompt">
+                <h3>Drag & Drop File Here</h3>
+                <p>CSV or Excel (.xlsx)</p>
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                    Required columns: p_state, p_county, p_apn, o_type, or_m_address, or_m_city, or_m_state, or_m_zip
+                </p>
+            </div>
+            <div id="file-selected" style="display: none;">
+                <h3>📄 <span id="filename"></span></h3>
+                <p style="color: #28a745; font-weight: bold;">File ready for import</p>
+                <button type="button" onclick="clearFile()" style="margin-top: 10px; padding: 5px 15px;">Remove File</button>
+            </div>
+        </div>
+
+        <div class="mode-selection">
+            <h3>Select Import Mode</h3>
+            
+            <div class="mode-option" onclick="selectMode('new')">
+                <label style="cursor: pointer; display: block; margin: 0;">
+                    <input type="radio" name="import_mode" value="new" id="mode-new">
+                    <strong>Create New Records</strong><br>
+                    <small style="color: #666; margin-left: 28px;">
+                        Only import records that don't exist (based on APN + County + State). 
+                        Existing records will be skipped. New records will be assigned "Prospect" status unless CSV specifies otherwise.
+                    </small>
+                </label>
+            </div>
+            
+            <div class="mode-option" onclick="selectMode('update')">
+                <label style="cursor: pointer; display: block; margin: 0;">
+                    <input type="radio" name="import_mode" value="update" id="mode-update">
+                    <strong>Update Existing Records</strong><br>
+                    <small style="color: #666; margin-left: 28px;">
+                        Update empty fields in existing records with CSV data. 
+                        Will not overwrite existing data (except Status - see below).
+                    </small>
+                </label>
+            </div>
+        </div>
+
+        <div class="checkbox-option" id="status-checkbox-container" style="display: none; opacity: 0.5;">
+            <label>
+                <input type="checkbox" id="dont-change-status" disabled>
+                Don't Change Status When Updating
+            </label>
+            <p style="margin: 10px 0 0 30px; font-size: 14px; color: #856404;">
+                When checked, existing status values will be preserved even if CSV contains status values.
+            </p>
+        </div>
+
+        <div style="text-align: center;">
+            <button class="import-btn" id="import-btn" onclick="startImport()" disabled>
+                Start Import
+            </button>
+        </div>
+
+        <div id="loading" style="display: none; text-align: center; margin: 30px 0;">
+            <p>Processing... Please wait.</p>
+            <progress style="width: 100%; height: 20px;"></progress>
+        </div>
+
+        <div id="results" class="results-area">
+            <!-- Results will be populated here -->
+        </div>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let selectedMode = null;
+
+        // File upload handling
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('csv-file');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#007bff';
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#ccc';
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#ccc';
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && (files[0].name.endsWith('.csv') || files[0].name.endsWith('.xlsx'))) {
+                handleFile(files[0]);
+            } else {
+                alert('Please upload a CSV or Excel (.xlsx) file');
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            selectedFile = file;
+            document.getElementById('filename').textContent = file.name;
+            document.getElementById('upload-prompt').style.display = 'none';
+            document.getElementById('file-selected').style.display = 'block';
+            dropZone.classList.add('has-file');
+            updateImportButton();
+        }
+
+        function clearFile() {
+            selectedFile = null;
+            fileInput.value = '';
+            document.getElementById('upload-prompt').style.display = 'block';
+            document.getElementById('file-selected').style.display = 'none';
+            dropZone.classList.remove('has-file');
+            updateImportButton();
+        }
+
+        function selectMode(mode) {
+            selectedMode = mode;
+            document.querySelectorAll('.mode-option').forEach(el => el.classList.remove('selected'));
+            document.getElementById('mode-' + mode).closest('.mode-option').classList.add('selected');
+            document.getElementById('mode-' + mode).checked = true;
+            
+            // Show/hide status checkbox
+            const checkboxContainer = document.getElementById('status-checkbox-container');
+            const checkbox = document.getElementById('dont-change-status');
+            
+            if (mode === 'update') {
+                checkboxContainer.style.display = 'block';
+                checkboxContainer.style.opacity = '1';
+                checkbox.disabled = false;
+            } else {
+                checkboxContainer.style.display = 'none';
+                checkbox.disabled = true;
+                checkbox.checked = false;
+            }
+            updateImportButton();
+        }
+
+        function updateImportButton() {
+            const btn = document.getElementById('import-btn');
+            if (selectedFile && selectedMode) {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
+            }
+        }
+
+        async function startImport() {
+            if (!selectedFile || !selectedMode) return;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('mode', selectedMode);
+            formData.append('dont_change_status', document.getElementById('dont-change-status').checked);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('import-btn').disabled = true;
+            document.getElementById('results').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/import', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                displayResults(result);
+            } catch (error) {
+                displayResults({
+                    success: false,
+                    message: 'Network error: ' + error.message,
+                    errors: ['Failed to connect to server']
+                });
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('import-btn').disabled = false;
+            }
+        }
+
+		function displayResults(result) {
+			const resultsDiv = document.getElementById('results');
+			resultsDiv.className = 'results-area ' + (result.success ? 'success' : 'error');
+			
+			let html = '<h2>' + (result.success ? 'Import Successful!' : 'Import Failed') + '</h2>';
+			
+			if (result.success) {
+				html += '<p>' + result.message + '</p>';
+				html += '<div class="stats-grid">';
+				html += '<div class="stat-box"><div class="stat-number">' + (result.new_owners || 0) + '</div><div class="stat-label">New Owners</div></div>';
+				html += '<div class="stat-box"><div class="stat-number">' + (result.existing_owners || 0) + '</div><div class="stat-label">Existing Owners</div></div>';
+				html += '<div class="stat-box"><div class="stat-number">' + (result.new_properties || 0) + '</div><div class="stat-label">New Properties</div></div>';
+				html += '<div class="stat-box"><div class="stat-number">' + (result.existing_properties || 0) + '</div><div class="stat-label">Existing Properties (Skipped)</div></div>';
+				html += '</div>';
+				
+				if (result.audit && result.audit.length > 0) {
+					html += '<h3>Import Audit Log</h3>';
+					html += '<div class="error-list" style="background: #f8f9fa; border-left: 3px solid #007bff; max-height: 300px;">';
+					result.audit.forEach(log => {
+						html += '<div class="error-item" style="font-size: 12px; font-family: monospace;">' + log + '</div>';
+					});
+					html += '</div>';
+				}
+				
+				if (result.details && result.details.length > 0) {
+					html += '<h3>Import Details</h3><ul style="text-align: left; max-height: 200px; overflow-y: auto;">';
+					result.details.forEach(detail => {
+						html += '<li>' + detail + '</li>';
+					});
+					html += '</ul>';
+				}
+				html += '<div style="margin-top: 20px;"><a href="/" class="btn-primary" style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Return to Dashboard</a></div>';
+			} else {
+				html += '<p><strong>Data has not been imported.</strong></p>';
+				html += '<p>' + result.message + '</p>';
+				if (result.errors && result.errors.length > 0) {
+					html += '<div class="error-list">';
+					result.errors.forEach(error => {
+						html += '<div class="error-item">' + error + '</div>';
+					});
+					html += '</div>';
+				}
+				
+				if (result.audit && result.audit.length > 0) {
+					html += '<h3>Import Audit Log (Debug)</h3>';
+					html += '<div class="error-list" style="background: #f8f9fa; border-left: 3px solid #ffc107; max-height: 300px;">';
+					result.audit.forEach(log => {
+						html += '<div class="error-item" style="font-size: 12px; font-family: monospace;">' + log + '</div>';
+					});
+					html += '</div>';
+				}
+				
+				html += '<div style="margin-top: 20px;"><button onclick="startImport()" class="btn-secondary" style="padding: 10px 20px; margin-right: 10px;">Try Again</button><a href="/" style="padding: 10px 20px; color: #666;">Cancel</a></div>';
+			}
+			
+			resultsDiv.innerHTML = html;
+			resultsDiv.style.display = 'block';
+			resultsDiv.scrollIntoView({ behavior: 'smooth' });
+		}
+
+        // Check URL params for pre-selected mode
+        const urlParams = new URLSearchParams(window.location.search);
+        const preMode = urlParams.get('mode');
+        if (preMode === 'new' || preMode === 'update') {
+            selectMode(preMode);
+        }
+    </script>
+</body>
+</html>

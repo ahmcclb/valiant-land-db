@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Documents - Valiant Land</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/document_creation.css') }}">
+</head>
+<body>
+    <div class="header-bar">
+        <a href="/" class="logo-link">
+            <img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+                 alt="Valiant Land Logo" class="logo">
+        </a>
+        <h1 class="site-title">Generate Documents</h1>
+    </div>
+
+    <div class="container">
+        <!-- Back Button -->
+        <div class="back-section">
+            <button id="back-btn" class="btn-back">← Back to Dashboard</button>
+        </div>
+
+        <!-- Property Summary -->
+        <div class="section">
+            <h2>Selected Properties</h2>
+            <div id="property-summary" class="property-summary">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Template Selection -->
+        <div class="section">
+            <h2>Select Document Template</h2>
+            <div id="template-list" class="template-list">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <!-- Mailing List Export Section -->
+        <div class="section">
+            <h2>Select Mailing List</h2>
+            <div id="mailing-list" class="template-list">
+                <div class="template-item" data-mailing-type="usmail">
+                    <span class="template-name">US Mail List</span>
+                    <button class="btn-select btn-mailing">Select</button>
+                </div>
+                <div class="template-item" data-mailing-type="email">
+                    <span class="template-name">Email List</span>
+                    <button class="btn-select btn-mailing">Select</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="section action-buttons">
+            <div class="left-spacer"></div>
+            <button id="update-status-btn" class="btn-update-status" style="background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 14px; height: 42px; border-radius: 4px; cursor: pointer; margin-right: 10px;     flex: 1;
+    max-width: 200px;">Update Status</button>
+            <button id="mark-as-mailed-btn" class="btn-mark-as-mailed">Mark as Mailed</button>
+            <div class="center-buttons">
+                <button id="generate-btn" class="btn-primary" disabled>Generate Documents</button>
+                <button id="cancel-btn" class="btn-cancel">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div id="progress-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Generating Documents...</h3>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="progress-text">Preparing...</p>
+            <button id="progress-cancel" class="btn-cancel" style="display: none;">Cancel</button>
+        </div>
+    </div>
+	
+	    <!-- Change Status Popup -->
+    <div id="popup-overlay" class="popup-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    
+    <div id="change-status-popup" class="popup" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; min-width: 400px;">
+        <div class="popup-content">
+            <div class="popup-header" style="padding: 15px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 18px;">Change Status</h2>
+                <span class="close-popup" style="cursor: pointer; font-size: 24px; line-height: 1;">&times;</span>
+            </div>
+            <div class="popup-body" style="padding: 20px;">
+                <label style="display: block; margin-bottom: 10px;">Select New Status: 
+                    <select id="status-dropdown" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        <option value="">-- Select Status --</option>
+                    </select>
+                </label>
+                <p style="margin-top: 15px; color: #666;">This will update <span id="status-record-count" style="font-weight: bold; color: #333;">0</span> selected records.</p>
+            </div>
+            <div class="popup-footer" style="padding: 15px 20px; border-top: 1px solid #ddd; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn-cancel close-popup" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <button class="btn-success" id="confirm-status-change" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/document_creation.js') }}"></script>
+</body>
+</html>

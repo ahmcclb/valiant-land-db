@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valiant Land Real Estate Database</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<base target="_blank">
+</head>
+<body>
+    <!-- Logo and Title -->
+    <div class="header-bar">
+        <a href="/" class="logo-link">
+		<img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+         alt="Valiant Land Logo" class="logo">
+		</a>
+        <h1 class="site-title">Valiant Land Real Estate Database</h1>
+    </div>
+
+    <!-- First Menu: Action Menu -->
+    <nav class="action-menu">
+        <button class="menu-btn" data-action="new-offer-request">New Offer Request</button>
+        <button class="menu-btn" data-action="add-record">Add Record</button>
+        <button class="menu-btn" data-action="import">Import</button>
+        <button class="menu-btn" data-action="export-all">Export All Data</button>
+        <button class="menu-btn" data-action="mailing">Mailing</button>
+        <button class="menu-btn" data-action="generate-docs">Generate Documents</button>
+        <button class="menu-btn" data-action="status">Status</button>
+        <button class="menu-btn" data-action="tags">Tags</button>
+        <button class="menu-btn" data-action="company-info">Company Info</button>
+        <button class="menu-btn" data-action="advanced-search">Advanced Search</button>
+		<!-- Add to header or action menu -->
+		<div class="sync-controls" style="display: flex; align-items: center; gap: 10px; padding: 5px 15px; background: #f0f0f0; border-radius: 4px;">
+			<span id="sync-status-indicator" style="display: flex; align-items: center; gap: 5px;">
+				<span class="sync-dot" style="width: 8px; height: 8px; background: #28a745; border-radius: 50%;"></span>
+				<span class="sync-text">Synced</span>
+			</span>
+			<button onclick="performSync()" class="btn-sync" style="padding: 4px 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+				Sync Now
+			</button>
+			<span id="sync-pending-count" style="font-size: 11px; color: #666; display: none;"></span>
+		</div>
+    </nav>
+
+    <!-- Simple Search Bar -->
+    <div class="simple-search-bar">
+        <span class="search-label">Search:</span>
+        <select id="simpleSearchField" onchange="updateSimpleSearchInput()" class="search-field-select">
+            <option value="">Select field...</option>
+            <option value="keyword" selected>Keyword</option>
+            <option value="p_apn">APN</option>
+            <option value="p_status">Status</option>
+            <option value="p_id">Property Id</option>
+            <option value="or_fname">Caller First Name</option>
+            <option value="or_lname">Caller Last Name</option>
+            <option value="o_company">Company Name</option>
+            <option value="or_phone">Phone</option>
+            <option value="or_m_zip">Mailing Zip</option>
+            <option value="p_county">Property County</option>
+            <option value="p_state">Property State</option>
+            <option value="p_zip">Property Zip</option>
+            <option value="p_acres">Property Size (Acres)</option>
+            <option value="p_create_time">Date Created</option>
+            <option value="p_last_updated">Last Updated</option>
+            <option value="p_offer_accept_date">Expired Offer</option>
+            <option value="p_aquired">Acquisition Type</option>
+            <option value="tags">Tag</option>
+        </select>
+        <span id="simpleSearchEquals" class="search-equals">=</span>
+        <div id="simpleSearchInputContainer" class="search-input-container">
+            <input type="text" id="simpleSearchValue" placeholder="Enter search term..." class="search-text-input">
+        </div>
+        <button onclick="executeSimpleSearch()" class="search-btn">Search</button>
+        <button onclick="clearSimpleSearch()" class="clear-search-btn">Clear Search</button>
+    </div>
+    <!-- End Simple Search Bar -->
+
+    <!-- Second Menu: Filter Menu -->
+    <nav class="filter-menu">
+        <button class="filter-btn active" data-filter="all_in_process">All In Process</button>
+        <button class="filter-btn" data-filter="prospects">Prospects</button>
+        <button class="filter-btn" data-filter="skip_trace">Skip Trace</button>
+        <button class="filter-btn" data-filter="offer_requests">Offer Requests</button>
+        <button class="filter-btn" data-filter="offers_made">Offers Made</button>
+        <button class="filter-btn" data-filter="second_offers">Second Offers Made</button>
+        <button class="filter-btn" data-filter="buying">Buying</button>
+        <button class="filter-btn" data-filter="selling">Selling</button>
+        <button class="filter-btn" data-filter="sold">Sold</button>
+        <button class="filter-btn" data-filter="on_hold">On Hold</button>
+        <button class="filter-btn" data-filter="all_closed">All Closed</button>
+    </nav>
+
+    <!-- Selection Controls -->
+    <div class="selection-controls">
+        <span class="record-count"># of Records Selected: <span id="selected-count">0</span></span>
+        <button class="link-btn" id="select-all-set">Select All in Set</button>
+        <button class="link-btn" id="change-status">Change Status</button>
+        <button class="link-btn" id="customize-columns">Customize</button>
+    </div>
+
+    <!-- Properties Table -->
+    <div class="table-container">
+        <table id="properties-table">
+            <thead>
+                <tr id="table-header">
+                    <!-- Columns will be populated by JavaScript -->
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- Rows will be populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="pagination-controls">
+        <button id="first-page" class="page-btn">First Page</button>
+        <button id="prev-page" class="page-btn">Previous Page</button>
+        <span class="page-info">
+            Page: <input type="number" id="current-page" value="1" min="1"> / 
+            <span id="total-pages">1</span>
+        </span>
+        <button id="next-page" class="page-btn">Next Page</button>
+        <button id="last-page" class="page-btn">Last Page</button>
+        <label class="per-page-wrapper">
+            Records per page: 
+            <select id="per-page">
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="40">40</option>
+                <option value="50">50</option>
+            </select>
+        </label>
+    </div>
+
+    <!-- Popups (Initially Hidden) -->
+    <div id="popup-overlay" class="popup-overlay" style="display: none;"></div>
+
+    <!-- Column Customization Popup -->
+    <div id="customize-popup" class="popup" style="display: none;">
+        <div class="popup-header">
+            <h2>Customize Table Columns</h2>
+            <span class="close-popup">&times;</span>
+        </div>
+        <div class="popup-body">
+            <div id="column-list" class="column-list">
+                <!-- Columns will be populated by JavaScript -->
+            </div>
+        </div>
+        <div class="popup-footer">
+            <button class="btn-cancel">Cancel</button>
+            <button class="btn-save">Save</button>
+        </div>
+    </div>
+
+<!-- New Offer Request Popup -->
+	<div id="new-offer-popup" class="popup" style="display: none;">
+		<div class="popup-header">
+			<h2>New Offer Request</h2>
+			<span class="close-popup">&times;</span>
+		</div>
+		<div class="popup-body">
+			<label>Enter APN: <input type="text" id="apn-search" placeholder="Enter APN" style="width: 100%; padding: 8px; margin-bottom: 15px;"></label>
+			<div id="apn-results" class="apn-results"></div>
+		</div>
+	</div>
+
+    <!-- Delete Confirmation Popup -->
+    <div id="delete-popup" class="popup" style="display: none;">
+        <div class="popup-header">
+            <h2>Confirm Delete</h2>
+            <span class="close-popup">&times;</span>
+        </div>
+        <div class="popup-body">
+            <p>Are you sure you want to delete this record?</p>
+        </div>
+        <div class="popup-footer">
+            <button class="btn-cancel">Cancel</button>
+            <button class="btn-confirm-delete">Confirm</button>
+        </div>
+    </div>
+	<!-- Mailing Type Selection Popup -->
+	<div id="mailing-type-popup" class="popup" style="display: none;">
+		<div class="popup-header">
+			<h2>Select Export Type</h2>
+			<span class="close-popup">&times;</span>
+		</div>
+		<div class="popup-body">
+			<p>Choose the type of mailing list to export:</p>
+			<div class="button-group" style="display: flex; gap: 15px; margin-top: 20px;">
+				<button id="export-usmail-btn" class="btn-primary" style="flex: 1;">US Mail</button>
+				<button id="export-email-btn" class="btn-primary" style="flex: 1;">Email</button>
+			</div>
+		</div>
+	</div>
+    <!-- Other popups will be added as their specs are provided -->
+<!-- Change Status Popup -->
+<div id="change-status-popup" class="popup" style="display: none;">
+    <div class="popup-content">
+        <div class="popup-header">
+            <h2>Change Status</h2>
+            <span class="close-popup">&times;</span>
+        </div>
+        <div class="popup-body">
+            <label>Select New Status: 
+                <select id="status-dropdown">
+                    <option value="">-- Select Status --</option>
+                </select>
+            </label>
+            <p>This will update <span id="status-record-count">0</span> selected records.</p>
+        </div>
+        <div class="popup-footer">
+            <button class="btn-cancel close-popup">Cancel</button>
+            <button class="btn-success" id="confirm-status-change">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Sync Modal -->
+<div id="sync-modal" class="popup" style="display: none; max-width: 500px;">
+    <div class="popup-header">
+        <h2>Synchronization</h2>
+        <span class="close-popup">&times;</span>
+    </div>
+    <div class="popup-body">
+        <div id="sync-progress" style="margin: 20px 0;">
+            <div style="background: #e0e0e0; height: 20px; border-radius: 10px; overflow: hidden;">
+                <div id="sync-progress-bar" style="background: #007bff; height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+            <p id="sync-status-text" style="margin-top: 10px; text-align: center; color: #666;">Ready to sync...</p>
+        </div>
+        <div id="sync-results" style="max-height: 200px; overflow-y: auto; font-size: 13px; display: none;"></div>
+    </div>
+    <div class="popup-footer">
+        <button onclick="closeSyncModal()" class="btn-cancel">Close</button>
+    </div>
+</div>
+
+    <!-- Advanced Search Popup -->
+<div id="advanced-search-popup" class="popup" style="display: none; max-width: 900px; width: 90%;">
+    <div class="popup-header">
+        <h2>Advanced Search</h2>
+        <span class="close-popup">&times;</span>
+    </div>
+    <div class="popup-body" style="max-height: 70vh; overflow-y: auto;">
+        <!-- Logic Selector -->
+        <div class="search-logic" style="margin-bottom: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+            <label style="margin-right: 15px; font-weight: bold;">Match Logic:</label>
+            <button type="button" id="logic-and" class="logic-btn active" style="padding: 5px 15px; margin-right: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">AND</button>
+            <button type="button" id="logic-or" class="logic-btn" style="padding: 5px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">OR</button>
+            <span style="margin-left: 15px; color: #666; font-size: 14px;" id="logic-description">All rules must match</span>
+        </div>
+
+        <!-- Rules Container -->
+        <div id="search-rules-container" style="margin-bottom: 20px;">
+            <!-- Rules will be added here dynamically -->
+        </div>
+
+        <!-- Add Rule Button -->
+        <button type="button" id="add-rule-btn" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 20px;">+ Add Rule</button>
+
+        <!-- Error Display -->
+        <div id="search-error" style="color: #dc3545; margin-bottom: 10px; display: none;"></div>
+    </div>
+    <div class="popup-footer">
+        <button type="button" class="btn-cancel close-popup">Cancel</button>
+        <button type="button" id="reset-search-btn" style="padding: 8px 16px; background: #ffc107; color: #212529; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">Reset</button>
+        <button type="button" id="execute-search-btn" class="btn-success" style="padding: 8px 16px;">Search</button>
+    </div>
+</div>
+
+<!-- Date Picker CSS (for flatpickr or use native date inputs) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

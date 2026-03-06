@@ -1,0 +1,40 @@
+# Security - NEVER commit these
+config.json
+*.env
+.env
+
+# Database
+*.sql
+*.dump
+*.backup
+
+# Uploaded files (these sync via Supabase, not git)
+static/uploads/
+static/exports/
+static/photos/
+static/documents/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tag Management - Valiant Land</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tag_management.css') }}">
+</head>
+<body>
+    <div class="header-bar">
+        <a href="/" class="logo-link">
+    <img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+         alt="Valiant Land Logo" class="logo">
+		</a>
+        <h1 class="site-title">Tag Management</h1>
+    </div>
+
+    <div class="container">
+        <div class="controls">
+            <button id="add-tag" class="btn-primary">Add Tag</button>
+            <a href="/" class="btn-cancel">Back to Dashboard</a>
+        </div>
+
+        <div class="tag-list" id="tag-list">
+            <!-- Tags will be populated here -->
+        </div>
+    </div>
+
+    <!-- Add Tag Popup -->
+    <div id="tag-popup-overlay" class="popup-overlay" style="display: none;"></div>
+    <div id="tag-popup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>Add New Tag</h2>
+                <span class="close-popup" data-popup="tag-popup">&times;</span>
+            </div>
+            <div class="popup-body">
+                <label>Tag Name: <input type="text" id="tag-name-input" placeholder="Enter tag name" required></label>
+            </div>
+            <div class="popup-footer">
+                <button class="btn-cancel" data-popup="tag-popup">Cancel</button>
+                <button class="btn-success" id="save-tag">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Popup -->
+    <div id="delete-popup-overlay" class="popup-overlay" style="display: none;"></div>
+    <div id="delete-popup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>Confirm Delete</h2>
+                <span class="close-popup" data-popup="delete-popup">&times;</span>
+            </div>
+            <div class="popup-body">
+                <p>Are you sure you want to delete this tag?</p>
+                <p class="warning">This action cannot be undone.</p>
+            </div>
+            <div class="popup-footer">
+                <button class="btn-cancel" data-popup="delete-popup">Cancel</button>
+                <button class="btn-danger" id="confirm-delete-tag">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/tag_management.js') }}"></script>
+</body>
+</html>

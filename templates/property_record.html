@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Property Record - Valiant Land</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/property_record.css') }}">
+<base target="_blank">
+</head>
+<body>
+    <div class="header-bar">
+        <a href="/" target="_self" class="logo-link">
+    <img src="{{ url_for('static', filename='photos/logo-with-shield-120-wide.png') }}" 
+         alt="Valiant Land Logo" class="logo">
+		</a>
+        <h1 class="site-title">Valiant Land Database</h1>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        <button id="back-btn" class="btn-secondary">Back</button>
+	<button id="add-additional-btn" class="btn-info" style="display: none;">Add Additional Record</button>
+	<button id="update-btn" class="btn-success">Update Record</button>
+    </div>
+
+    <!-- Save Changes Confirmation Popup -->
+    <div id="save-confirm-popup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>Save Changes First?</h2>
+                <span class="close-popup">&times;</span>
+            </div>
+            <div class="popup-body">
+                <p>You have unsaved changes. Would you like to save them first?</p>
+            </div>
+            <div class="popup-footer">
+                <button id="save-yes" class="btn-success">Yes, save</button>
+                <button id="save-no" class="btn-cancel">No, proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container" id="property-record">
+        <!-- Header Info -->
+        <div class="header-info">
+            <h2 id="record-title">Property Record</h2>
+            <div class="message" id="response-message"></div>
+        </div>
+
+        <form id="property-form" novalidate>
+            <!-- Timestamps -->
+            <div class="section timestamps">
+                <div class="form-row">
+                    <label>Property ID: <span id="p_id"></span></label>
+                    <label>Date Created: <span id="p_create_time"></span></label>
+                    <label>Last Updated: <span id="p_last_updated"></span></label>
+                    <label>Status Last Updated: <span id="p_status_last_updated"></span></label>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div class="section">
+                <h3>Status</h3>
+                <div class="form-group">
+                    <label for="p_status">Property Record Status:</label>
+                    <select id="p_status" name="p_status"></select>
+                </div>
+            </div>
+
+            <!-- Caller Section -->
+            <div class="section">
+                <h3>Caller</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="or_fname">First Name:*</label>
+                        <input type="text" id="or_fname" name="or_fname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_lname">Last Name:*</label>
+                        <input type="text" id="or_lname" name="or_lname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_email">Email:</label>
+                        <input type="email" id="or_email" name="or_email">
+                    </div>
+                    <div class="form-group">
+                        <label for="or_phone">Primary Phone:</label>
+                        <input type="tel" id="or_phone" name="or_phone">
+                    </div>
+                    <div class="form-group">
+                        <label for="or_fax">Fax:</label>
+                        <input type="tel" id="or_fax" name="or_fax">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Owner Section -->
+            <div class="section">
+                <h3>Owner of Record</h3>
+                <div class="form-group">
+                    <label>Owner's ID:</label>
+                    <span id="or_id"></span>
+                </div>
+                <div class="form-group">
+                    <label>This property is owned by:</label>
+                    <div class="button-group">
+                        <button type="button" class="btn-toggle active" data-value="Individual">Individual(s)</button>
+                        <button type="button" class="btn-toggle" data-value="Company">Company/Entity</button>
+                    </div>
+                    <input type="hidden" id="o_type" name="o_type" value="Individual">
+                </div>
+                <div class="form-row" id="owner-names">
+                    <div class="form-group">
+                        <label for="o_fname">Owner's First Name:*</label>
+                        <input type="text" id="o_fname" name="o_fname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="o_lname">Owner's Last Name:*</label>
+                        <input type="text" id="o_lname" name="o_lname" required>
+                    </div>
+                </div>
+                <div id="company-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="o_company">Company Name:*</label>
+                        <input type="text" id="o_company" name="o_company">
+                    </div>
+                </div>
+                <div class="other-owners">
+                    <label>Other owners on title:</label>
+                    <div class="button-group">
+                        <button type="button" class="btn-toggle" data-value="1">Yes</button>
+                        <button type="button" class="btn-toggle active" data-value="0">No</button>
+                    </div>
+                    <input type="hidden" id="o_other_owners" name="o_other_owners" value="0">
+                    <div id="additional-owners" style="display: none;">
+                        <!-- 2nd Owner -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="o_2fname">2nd Owner's First Name:</label>
+                                <input type="text" id="o_2fname" name="o_2fname">
+                            </div>
+                            <div class="form-group">
+                                <label for="o_2lname">2nd Owner's Last Name:</label>
+                                <input type="text" id="o_2lname" name="o_2lname">
+                            </div>
+                        </div>
+                        <!-- 3rd Owner -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="o_3fname">3rd Owner's First Name:</label>
+                                <input type="text" id="o_3fname" name="o_3fname">
+                            </div>
+                            <div class="form-group">
+                                <label for="o_3lname">3rd Owner's Last Name:</label>
+                                <input type="text" id="o_3lname" name="o_3lname">
+                            </div>
+                        </div>
+                        <!-- 4th Owner -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="o_4fname">4th Owner's First Name:</label>
+                                <input type="text" id="o_4fname" name="o_4fname">
+                            </div>
+                            <div class="form-group">
+                                <label for="o_4lname">4th Owner's Last Name:</label>
+                                <input type="text" id="o_4lname" name="o_4lname">
+                            </div>
+                        </div>
+                        <!-- 5th Owner -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="o_5fname">5th Owner's First Name:</label>
+                                <input type="text" id="o_5fname" name="o_5fname">
+                            </div>
+                            <div class="form-group">
+                                <label for="o_5lname">5th Owner's Last Name:</label>
+                                <input type="text" id="o_5lname" name="o_5lname">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mailing Address -->
+            <div class="section">
+                <h3>Mailing Recipient</h3>
+                <div class="form-group">
+                    <label for="or_m_address">*Mailing Address:</label>
+                    <input type="text" id="or_m_address" name="or_m_address" required>
+                </div>
+                <div class="form-group">
+                    <label for="or_m_address2">Mailing Address 2:</label>
+                    <input type="text" id="or_m_address2" name="or_m_address2">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="or_m_city">*City:</label>
+                        <input type="text" id="or_m_city" name="or_m_city" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_m_state">*State:</label>
+                        <select id="or_m_state" name="or_m_state" required>
+                            <option value="">Select State...</option>
+                            <optgroup label="US States">
+                                <option value="AL">Alabama</option>
+                                <option value="AK">Alaska</option>
+                                <option value="AZ">Arizona</option>
+                                <option value="AR">Arkansas</option>
+                                <option value="CA">California</option>
+                                <option value="CO">Colorado</option>
+                                <option value="CT">Connecticut</option>
+                                <option value="DE">Delaware</option>
+                                <option value="FL">Florida</option>
+                                <option value="GA">Georgia</option>
+                                <option value="HI">Hawaii</option>
+                                <option value="ID">Idaho</option>
+                                <option value="IL">Illinois</option>
+                                <option value="IN">Indiana</option>
+                                <option value="IA">Iowa</option>
+                                <option value="KS">Kansas</option>
+                                <option value="KY">Kentucky</option>
+                                <option value="LA">Louisiana</option>
+                                <option value="ME">Maine</option>
+                                <option value="MD">Maryland</option>
+                                <option value="MA">Massachusetts</option>
+                                <option value="MI">Michigan</option>
+                                <option value="MN">Minnesota</option>
+                                <option value="MS">Mississippi</option>
+                                <option value="MO">Missouri</option>
+                                <option value="MT">Montana</option>
+                                <option value="NE">Nebraska</option>
+                                <option value="NV">Nevada</option>
+                                <option value="NH">New Hampshire</option>
+                                <option value="NJ">New Jersey</option>
+                                <option value="NM">New Mexico</option>
+                                <option value="NY">New York</option>
+                                <option value="NC">North Carolina</option>
+                                <option value="ND">North Dakota</option>
+                                <option value="OH">Ohio</option>
+                                <option value="OK">Oklahoma</option>
+                                <option value="OR">Oregon</option>
+                                <option value="PA">Pennsylvania</option>
+                                <option value="RI">Rhode Island</option>
+                                <option value="SC">South Carolina</option>
+                                <option value="SD">South Dakota</option>
+                                <option value="TN">Tennessee</option>
+                                <option value="TX">Texas</option>
+                                <option value="UT">Utah</option>
+                                <option value="VT">Vermont</option>
+                                <option value="VA">Virginia</option>
+                                <option value="WA">Washington</option>
+                                <option value="WV">West Virginia</option>
+                                <option value="WI">Wisconsin</option>
+                                <option value="WY">Wyoming</option>
+                            </optgroup>
+                            <optgroup label="US Territories">
+                                <option value="DC">District of Columbia</option>
+                                <option value="PR">Puerto Rico</option>
+                                <option value="VI">U.S. Virgin Islands</option>
+                                <option value="GU">Guam</option>
+                                <option value="AS">American Samoa</option>
+                            </optgroup>
+                            <optgroup label="Canadian Provinces">
+                                <option value="AB">Alberta</option>
+                                <option value="BC">British Columbia</option>
+                                <option value="MB">Manitoba</option>
+                                <option value="NB">New Brunswick</option>
+                                <option value="NL">Newfoundland and Labrador</option>
+                                <option value="NS">Nova Scotia</option>
+                                <option value="ON">Ontario</option>
+                                <option value="PE">Prince Edward Island</option>
+                                <option value="QC">Quebec</option>
+                                <option value="SK">Saskatchewan</option>
+                                <option value="NT">Northwest Territories</option>
+                                <option value="YT">Yukon</option>
+                                <option value="NU">Nunavut</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="or_m_zip">*Zip Code:</label>
+                        <input type="text" id="or_m_zip" name="or_m_zip" pattern="[0-9]{5}(-[0-9]{4})?" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Property Information -->
+            <div class="section">
+                <h3>Property Information</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_apn">*Property APN (Parcel Number):</label>
+                        <input type="text" id="p_apn" name="p_apn" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_county">*Property County:</label>
+                        <input type="text" id="p_county" name="p_county" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="p_short_legal">Short Legal:</label>
+                    <textarea id="p_short_legal" name="p_short_legal" rows="3"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_address">Property Address (or Lat/Long):</label>
+                        <input type="text" id="p_address" name="p_address">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_city">Property City:</label>
+                        <input type="text" id="p_city" name="p_city">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_state">Property State:</label>
+                        <select id="p_state" name="p_state">
+                            <option value="">Select State...</option>
+                            <optgroup label="US States">
+                                <option value="AL">Alabama</option>
+                                <option value="AK">Alaska</option>
+                                <option value="AZ">Arizona</option>
+                                <option value="AR">Arkansas</option>
+                                <option value="CA">California</option>
+                                <option value="CO">Colorado</option>
+                                <option value="CT">Connecticut</option>
+                                <option value="DE">Delaware</option>
+                                <option value="FL">Florida</option>
+                                <option value="GA">Georgia</option>
+                                <option value="HI">Hawaii</option>
+                                <option value="ID">Idaho</option>
+                                <option value="IL">Illinois</option>
+                                <option value="IN">Indiana</option>
+                                <option value="IA">Iowa</option>
+                                <option value="KS">Kansas</option>
+                                <option value="KY">Kentucky</option>
+                                <option value="LA">Louisiana</option>
+                                <option value="ME">Maine</option>
+                                <option value="MD">Maryland</option>
+                                <option value="MA">Massachusetts</option>
+                                <option value="MI">Michigan</option>
+                                <option value="MN">Minnesota</option>
+                                <option value="MS">Mississippi</option>
+                                <option value="MO">Missouri</option>
+                                <option value="MT">Montana</option>
+                                <option value="NE">Nebraska</option>
+                                <option value="NV">Nevada</option>
+                                <option value="NH">New Hampshire</option>
+                                <option value="NJ">New Jersey</option>
+                                <option value="NM">New Mexico</option>
+                                <option value="NY">New York</option>
+                                <option value="NC">North Carolina</option>
+                                <option value="ND">North Dakota</option>
+                                <option value="OH">Ohio</option>
+                                <option value="OK">Oklahoma</option>
+                                <option value="OR">Oregon</option>
+                                <option value="PA">Pennsylvania</option>
+                                <option value="RI">Rhode Island</option>
+                                <option value="SC">South Carolina</option>
+                                <option value="SD">South Dakota</option>
+                                <option value="TN">Tennessee</option>
+                                <option value="TX">Texas</option>
+                                <option value="UT">Utah</option>
+                                <option value="VT">Vermont</option>
+                                <option value="VA">Virginia</option>
+                                <option value="WA">Washington</option>
+                                <option value="WV">West Virginia</option>
+                                <option value="WI">Wisconsin</option>
+                                <option value="WY">Wyoming</option>
+                            </optgroup>
+                            <optgroup label="US Territories">
+                                <option value="DC">District of Columbia</option>
+                                <option value="PR">Puerto Rico</option>
+                                <option value="VI">U.S. Virgin Islands</option>
+                                <option value="GU">Guam</option>
+                                <option value="AS">American Samoa</option>
+                            </optgroup>
+                            <optgroup label="Canadian Provinces">
+                                <option value="AB">Alberta</option>
+                                <option value="BC">British Columbia</option>
+                                <option value="MB">Manitoba</option>
+                                <option value="NB">New Brunswick</option>
+                                <option value="NL">Newfoundland and Labrador</option>
+                                <option value="NS">Nova Scotia</option>
+                                <option value="ON">Ontario</option>
+                                <option value="PE">Prince Edward Island</option>
+                                <option value="QC">Quebec</option>
+                                <option value="SK">Saskatchewan</option>
+                                <option value="NT">Northwest Territories</option>
+                                <option value="YT">Yukon</option>
+                                <option value="NU">Nunavut</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_zip">Property Zip:</label>
+                        <input type="text" id="p_zip" name="p_zip">
+                    </div>
+                </div>
+                
+                <button type="button" id="map-btn" class="btn-info">View on Map</button>
+                <BR>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_sqft">Property Size (Sq. Ft.):</label>
+                        <input type="number" id="p_sqft" name="p_sqft" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_acres">Property Size (Acres):</label>
+                        <input type="number" id="p_acres" name="p_acres" step="0.0001">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_terrain">Terrain:</label>
+                        <select id="p_terrain" name="p_terrain">
+                            <option value="">Select One...</option>
+                            <option value="Flat">Flat</option>
+                            <option value="Sloping">Sloping</option>
+                            <option value="In Valley">In Valley</option>
+                            <option value="Steep Incline">Steep Incline</option>
+                            <option value="Rolling Hills">Rolling Hills</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_zoning">Zoning:</label>
+                        <input type="text" id="p_zoning" name="p_zoning">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_use">Use:</label>
+                        <input type="text" id="p_use" name="p_use">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_use_code">Use Code:</label>
+                        <input type="text" id="p_use_code" name="p_use_code">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_use_description">Use Description:</label>
+                        <input type="text" id="p_use_description" name="p_use_description">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_impact_fee">Impact Fee:</label>
+                        <input type="number" id="p_impact_fee" name="p_impact_fee" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_environment">Environmental Concerns:</label>
+                        <input type="text" id="p_environment" name="p_environment">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="p_restrictions">Restrictions:</label>
+                    <textarea id="p_restrictions" name="p_restrictions" rows="2"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_waste_system_requirement">Waste System Requirement:</label>
+                        <input type="text" id="p_waste_system_requirement" name="p_waste_system_requirement">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_water_system_requirement">Water System Requirement:</label>
+                        <input type="text" id="p_water_system_requirement" name="p_water_system_requirement">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_flood">Flood Zone:</label>
+                        <input type="text" id="p_flood" name="p_flood">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_flood_description">Flood Zone Description:</label>
+                        <input type="text" id="p_flood_description" name="p_flood_description">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_base_tax">Annual Base Taxes:</label>
+                        <input type="number" id="p_base_tax" name="p_base_tax" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_hoa">Annual HOA/POA Fee:</label>
+                        <input type="number" id="p_hoa" name="p_hoa" step="0.01">
+                    </div>
+                </div>
+
+
+                <!-- Tags -->
+                <div class="form-group">
+                    <label>Tags:</label>
+                    <div class="tag-selector">
+                        <select id="tag-dropdown" class="tag-dropdown">
+                            <option value="">Add a tag...</option>
+                        </select>
+                    </div>
+                    <div class="selected-tags" id="selected-tags"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="p_betty_score">Betty Score:</label>
+                    <input type="number" id="p_betty_score" name="p_betty_score">
+                </div>
+               <!-- Property Liens Section - ADD THIS -->
+<div class="section">
+    <h3>Property Liens & Value</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="p_liens">Loan/Mortgage or Liens:</label>
+            <input type="number" id="p_liens" name="p_liens" step="0.01">
+        </div>
+        <div class="form-group">
+            <label for="p_back_tax">Back Taxes:</label>
+            <input type="number" id="p_back_tax" name="p_back_tax" step="0.01">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="p_county_assessed_value">County Assessed Value:</label>
+            <input type="number" id="p_county_assessed_value" name="p_county_assessed_value" step="0.01">
+        </div>
+        <div class="form-group">
+            <label for="p_county_market_value">County Market Value:</label>
+            <input type="number" id="p_county_market_value" name="p_county_market_value" step="0.01">
+        </div>
+        <div class="form-group">
+            <label for="p_comp_market_value">Comped Market Value:</label>
+            <input type="number" id="p_comp_market_value" name="p_comp_market_value" step="0.01">
+        </div>
+    </div>
+</div>
+<!-- End Property Liens Section --> 
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_viable">Viable Seller:</label>
+                        <select id="p_viable" name="p_viable">
+                            <option value="1">Yes</option>
+                            <option value="0">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_listed">Currently Listed with Realtor:</label>
+                        <select id="p_listed" name="p_listed">
+                            <option value="0">No</option>
+                            <option value="1">Yes</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_agent_name">Seller Agent's Name or Company:</label>
+                        <input type="text" id="p_agent_name" name="p_agent_name">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_agent_phone">Seller Agent's Phone Number:</label>
+                        <input type="tel" id="p_agent_phone" name="p_agent_phone" autocomplete="off">
+                    </div>
+                </div>
+                
+                            <!-- Owners Interest In Property -->
+            <div class="section">
+                <h3>Owners Interest In Property</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_owned">Length of Ownership:</label>
+                        <input type="text" id="p_owned" name="p_owned">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_aquired">Method of Acquisition:</label>
+                        <select id="p_aquired" name="p_aquired">
+                            <option value="">Select...</option>
+                            <option value="Purchased">Purchased</option>
+                            <option value="Inherited">Inherited</option>
+                            <option value="Gifted">Gifted</option>
+                            <option value="Probate Needed">Probate Needed</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_est_value">Owner's Estimated Property Value:</label>
+                        <input type="number" id="p_est_value" name="p_est_value" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_min_acceptable_offer">Owner's Least Acceptable Amount:</label>
+                        <input type="number" id="p_min_acceptable_offer" name="p_min_acceptable_offer" step="0.01">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Caller's Comments -->
+            <div class="form-group">
+                <label for="p_comments">Caller's Comments:</label>
+                <textarea id="p_comments" name="p_comments" rows="4"></textarea>
+            </div>
+                
+                <div class="form-group">
+                    <label for="p_note">Notes:</label>
+                    <textarea id="p_note" name="p_note" rows="4"></textarea>
+                </div>
+            </div>
+
+            <!-- Property Research -->
+            <div class="section">
+                <h3>Property Research</h3>
+				<!-- Last Sale/Transaction Information -->
+				<div class="form-row">
+					<div class="form-group">
+						<label for="p_last_sold_date">Last Sold Date:</label>
+						<input type="date" id="p_last_sold_date" name="p_last_sold_date" class="form-control">
+					</div>
+					<div class="form-group">
+						<label for="p_last_sold_amount">Last Sold Amount:</label>
+						<input type="text" id="p_last_sold_amount" name="p_last_sold_amount" class="form-control currency-field" placeholder="$0.00">
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="form-group">
+						<label for="p_last_transaction_date">Last Transaction Date:</label>
+						<input type="date" id="p_last_transaction_date" name="p_last_transaction_date" class="form-control">
+					</div>
+					<div class="form-group">
+						<label for="p_last_transaction_doc_type">Last Transaction Doc Type:</label>
+						<input type="text" id="p_last_transaction_doc_type" name="p_last_transaction_doc_type" class="form-control" placeholder="e.g., Warranty Deed, Quit Claim">
+					</div>
+				</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_survey">Survey?:</label>
+                        <select id="p_survey" name="p_survey">
+                            <option value="0">No</option>
+                            <option value="1">Yes</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_price">Offer Amount:</label>
+                        <input type="number" id="p_price" name="p_price" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_max_offer_amount">Maximum Offer Amount:</label>
+                        <input type="number" id="p_max_offer_amount" name="p_max_offer_amount" step="0.01">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+					<div class="form-group">
+						<label for="p_m_date">Offer Mail Date:</label>
+						<input type="date" id="p_m_date" name="p_m_date">
+					</div>
+					<div class="form-group">
+						<label for="p_offer_accept_date">Offer Accept By:</label>
+						<input type="date" id="p_offer_accept_date" name="p_offer_accept_date">
+					</div>
+					<div class="form-group">
+						<label for="p_contract_expires_date">Offer Expires On:</label>
+						<input type="date" id="p_contract_expires_date" name="p_contract_expires_date">
+					</div>
+				</div>
+
+                <!-- Online Comparables -->
+                <div class="comparables-section">
+                    <h4>Online Comparables</h4>
+                    <div id="comparables-links"></div>
+                </div>
+            </div>
+							
+
+            <!-- Property Improvements -->
+            <div class="section">
+                <h3>Property Improvements</h3>
+                <div class="improvements-grid">
+                    <label><input type="checkbox" value="Cabin"> Cabin</label>
+                    <label><input type="checkbox" value="Shed"> Shed</label>
+                    <label><input type="checkbox" value="Mobile Home"> Mobile Home</label>
+                    <label><input type="checkbox" value="RV Hookup"> RV Hookup</label>
+                    <label><input type="checkbox" value="Septic System"> Septic System</label>
+                    <label><input type="checkbox" value="Well"> Well</label>
+                    <label><input type="checkbox" value="Fence"> Fence</label>
+                    <label>Other:<input type="text" id="p_improvements_other" placeholder="Describe other improvements"></label>
+                </div>
+            </div>
+
+            <!-- Power & Access -->
+            <div class="section">
+                <h3>Power & Access</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_power">Power Line:</label>
+                        <select id="p_power" name="p_power">
+                            <option value="">Select</option>
+                            <option value="Yes">Yes</option>
+                            <option value="Within 1/4 mile">Within 1/4 mile</option>
+                            <option value="Within 1 mile">Within 1 mile</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p_access">Road Access:</label>
+                        <select id="p_access" name="p_access">
+                            <option value="">Select</option>
+                            <option value="Yes - Paved">Yes - Paved</option>
+                            <option value="Yes - Unpaved">Yes - Unpaved</option>
+                            <option value="Legal and Physical Access">Legal and Physical Access</option>
+                            <option value="Legal Access Only">Legal Access Only</option>
+                            <option value="Physical Access Only">Physical Access Only</option>
+                            <option value="Easement">Easement</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Uploads Section -->
+            <div class="section">
+                <h3>Uploads</h3>
+                
+                <!-- Photos -->
+                <div class="upload-group">
+                    <h4>Photos</h4>
+                    <input type="file" id="photo-upload" accept="image/*" style="display: none;">
+                    <button type="button" id="upload-photo-btn" class="btn-upload">Upload Photo</button>
+                    <div class="upload-list" id="photos-list"></div>
+                </div>
+				
+                <!-- Mail Images -->
+                <div class="upload-group">
+                    <h4>Mail Images (Max 2)</h4>
+                    <input type="file" id="mail-image-upload" accept="image/*" style="display: none;">
+                    <button type="button" id="upload-mail-image-btn" class="btn-upload">Upload Mail Image</button>
+                    <div class="upload-list" id="mail-images-list"></div>
+                </div>   
+				
+                <!-- Documents -->
+                <div class="upload-group">
+                    <h4>Documents</h4>
+                    <input type="file" id="doc-upload" accept=".pdf,.doc,.docx,.xls,.xlsx" style="display: none;">
+                    <button type="button" id="upload-doc-btn" class="btn-upload">Upload Document</button>
+                    <div class="upload-list" id="documents-list"></div>
+                </div>
+                
+                <!-- Links -->
+                <div class="upload-group">
+                    <h4>Links</h4>
+                    <div class="add-link-row">
+                        <input type="url" id="link-url" placeholder="Enter URL">
+                        <input type="text" id="link-desc" placeholder="Description">
+                        <button type="button" id="add-link-btn" class="btn-small">Add Link</button>
+                    </div>
+                    <div class="upload-list" id="links-list"></div>
+                </div>
+            </div>
+
+            <!-- Transaction Information -->
+            <div class="section">
+                <h3>Transaction Information</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_purchased_on">Purchase Date:</label>
+                        <input type="date" id="p_purchased_on" name="p_purchased_on">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_purchase_amount">Purchase Amount:</label>
+                        <input type="number" id="p_purchase_amount" name="p_purchase_amount" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_purchase_closing_costs">Purchase Total Closing Costs:</label>
+                        <input type="number" id="p_purchase_closing_costs" name="p_purchase_closing_costs" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_closing_company_name_purchase">Purchase Closing Company:</label>
+                        <input type="text" id="p_closing_company_name_purchase" name="p_closing_company_name_purchase">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p_sold_on">Sale Date:</label>
+                        <input type="date" id="p_sold_on" name="p_sold_on">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_sold_amount">Sale Amount:</label>
+                        <input type="number" id="p_sold_amount" name="p_sold_amount" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_buyer">Sale to:</label>
+                        <input type="text" id="p_buyer" name="p_buyer">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_sold_closing_costs">Sale Total Closing Costs:</label>
+                        <input type="number" id="p_sold_closing_costs" name="p_sold_closing_costs" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_closing_company_name_sale">Sale Closing Company:</label>
+                        <input type="text" id="p_closing_company_name_sale" name="p_closing_company_name_sale">
+                    </div>
+                    <div class="form-group">
+                        <label for="p_profit">Profit:</label>
+                        <input type="number" id="p_profit" name="p_profit" step="0.01" readonly>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer Buttons -->
+            <div class="form-buttons footer">
+                <button type="button" id="back-btn-footer" class="btn-secondary">Back</button>
+                <button type="button" id="add-additional-footer" class="btn-info">Add Additional Record</button>
+                <button type="submit" id="update-footer" class="btn-success">Update Record</button>
+            </div>
+        </form>
+    </div>
+
+
+
+    <script>
+        // Pass data from Flask to JavaScript
+        window.MODE = '{{ mode }}';
+        window.P_ID = {{ p_id or 'null' }};
+        window.STATIC_URL = '{{ url_for('static', filename='') }}';
+    </script>
+    <script src="{{ url_for('static', filename='js/property_record.js') }}"></script>
+    <script>
+    // Mode-based button labels
+    if (mode === 'new') {
+        document.getElementById('update-btn').textContent = 'Add Record';
+        document.getElementById('update-footer').textContent = 'Add Record';
+        document.getElementById('add-additional-btn').style.display = 'none';
+    } else {
+        document.getElementById('update-btn').textContent = 'Update Record';
+        document.getElementById('update-footer').textContent = 'Update Record';
+        document.getElementById('add-additional-btn').style.display = 'inline-block';
+    }
+</script>
+</body>
+</html>

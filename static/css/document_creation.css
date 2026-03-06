@@ -1,0 +1,267 @@
+/* document_creation.css - Round 10 Fixes */
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f5f5;
+}
+
+.header-bar {
+    background: #2c3e50;
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+}
+
+.logo {
+    height: 40px;
+    margin-right: 20px;
+}
+
+.site-title {
+    margin: 0;
+    font-size: 24px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
+
+.back-section {
+    margin-bottom: 20px;
+}
+
+.btn-back {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-back:hover {
+    background: #2980b9;
+}
+
+.section {
+    background: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.section h2 {
+    margin-top: 0;
+    color: #2c3e50;
+}
+
+.property-summary {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.owner-group {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.owner-group h4 {
+    margin: 0 0 10px 0;
+    color: #2c3e50;
+}
+
+.owner-group ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.owner-group li {
+    margin-bottom: 5px;
+    color: #555;
+}
+
+.template-list {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.template-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid #ddd;
+    background-color: #f5f5f5;
+    transition: background-color 0.2s;
+}
+
+.template-item:last-child {
+    border-bottom: none;
+}
+
+.template-item:hover {
+    background-color: #e9e9e9;
+}
+
+.template-item.selected {
+    background-color: #d4edda;
+    border-left: 4px solid #28a745;
+}
+
+/* FIX: Green button when item is selected - works for both template and mailing items */
+.template-item.selected .btn-select,
+.template-item.selected .btn-mailing {
+    background-color: #28a745;
+}
+
+.template-name {
+    font-weight: bold;
+    color: #333;
+    font-size: 14px;
+}
+
+/* FIX: Blue default button color instead of gray */
+.btn-select {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.btn-select:hover {
+    background-color: #0056b3;
+}
+
+/* FIX: Mailing button styles to match select buttons */
+.btn-mailing {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.btn-mailing:hover {
+    background-color: #0056b3;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    margin-top: 30px;
+    position: relative;
+}
+
+.left-spacer {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+/* FIX: Mark as Mailed button now matches Generate/Cancel buttons exactly */
+.btn-mark-as-mailed {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;  /* Removed font-weight: bold to match */
+    height: 42px;
+    flex: 1;
+    max-width: 200px;
+}
+
+.btn-mark-as-mailed:hover {
+    background-color: #0056b3;
+}
+
+.center-buttons {
+    flex: 2;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.btn-primary, .btn-cancel {
+    height: 42px;
+    padding: 12px 24px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background-color: #28a745;
+    color: white;
+    border: none;
+}
+
+.btn-primary:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+
+.btn-cancel {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-cancel:hover {
+    background: #c0392b;
+}
+
+/* Progress Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    min-width: 400px;
+    text-align: center;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background: #ecf0f1;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 20px 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #3498db;
+    width: 0%;
+    transition: width 0.3s ease;
+}
