@@ -787,6 +787,7 @@ class ValiantLandSync:
         
     def _pull_property_files_from_cloud(self, cursor, stats):
         """Pull property_photos and property_documents records from cloud to local"""
+        logger.info(">>> ENTERING _pull_property_files_from_cloud")  # ADD THIS LINE
         try:
             # CRITICAL FIX: Reset sequences first to avoid ID conflicts
             self._reset_sequences(cursor)
@@ -1258,9 +1259,45 @@ class ValiantLandSync:
                     logger.debug(f"  ERROR: {error_msg}")
                     continue  # Don't rollback, just continue to next file
                     
+            # After downloading all files, reconcile any missing photo records
+            self._reconcile_downloaded_files(cursor, conn)
+                    
         except Exception as e:
             logger.debug(f"Error accessing cloud file list: {e}")
             stats['failed'].append(f"List error: {str(e)}")
+            
+    def _reconcile_downloaded_files(self, cursor, conn):
+        """Ensure property_photos/property_documents records exist for downloaded files"""
+        try:
+            # Find downloaded photos without database records
+            cursor.execute("""
+                SELECT fs.local_path 
+                FROM file_sync fs
+                LEFT JOIN property_photos pp ON fs.local_path = pp.file_path
+                WHERE fs.local_path LIKE 'uploads/photos/%'
+                AND pp.photo_id IS NULL
+            """)
+            
+            for row in cursor.fetchall():
+                local_path = row['local_path']
+                filename = os.path.basename(local_path)
+                p_id = self._extract_property_id_from_filename(filename)
+                
+                if p_id:
+                    # Check if property exists now
+                    cursor.execute("SELECT p_id FROM properties WHERE p_id = %s", (p_id,))
+                    if cursor.fetchone():
+                        cursor.execute("""
+                            INSERT INTO property_photos (p_id, file_path, file_name, upload_date, is_primary, caption)
+                            VALUES (%s, %s, %s, NOW(), FALSE, '')
+                            ON CONFLICT DO NOTHING
+                        """, (p_id, local_path, filename))
+            
+            conn.commit()
+            logger.info("Reconciled missing photo records from downloaded files")
+            
+        except Exception as e:
+            logger.error(f"Error reconciling downloaded files: {e}")
             
     def _extract_property_id_from_filename(self, filename: str) -> Optional[int]:
         parts = filename.split('_')
