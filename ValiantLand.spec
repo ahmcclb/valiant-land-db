@@ -71,6 +71,9 @@ a = Analysis(
         'webview.screen',
         'webview.window',
         'clr',  # Pythonnet for WebView2
+		'sync_service',  # <-- ADD THIS LINE
+		'database_pg',   # <-- ADD THIS LINE (for safety)
+		'app',    		 # <-- ADD THIS LINE (for safety)
     ],
     hookspath=[],
     hooksconfig={},
