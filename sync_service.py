@@ -525,299 +525,336 @@ class ValiantLandSync:
         except Exception as e:
             logger.debug(f"Error syncing property file records: {e}")
     
-    def _pull_from_cloud(self) -> dict:
-        """Pull changes from Supabase to local - owners first to satisfy FK constraints"""
-        stats = {'properties_pulled': 0, 'owners_pulled': 0, 'photos_pulled': 0, 'documents_pulled': 0, 'conflicts': []}
+def _pull_from_cloud(self) -> dict:
+    """Pull changes from Supabase to local - owners first to satisfy FK constraints"""
+    stats = {'properties_pulled': 0, 'owners_pulled': 0, 'photos_pulled': 0, 'documents_pulled': 0, 'conflicts': []}
 
-        conn = self.get_local_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = self.get_local_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        try:
-            # PHASE 0: Push pending local deletions to cloud first
-            cursor.execute("SELECT * FROM sync_deletions WHERE sync_status = 'pending' AND cloud_deleted = FALSE")
-            pending_deletions = cursor.fetchall()
+    try:
+        # PHASE 0: Push pending local deletions to cloud first
+        cursor.execute("SELECT * FROM sync_deletions WHERE sync_status = 'pending' AND cloud_deleted = FALSE")
+        pending_deletions = cursor.fetchall()
 
-            for deletion in pending_deletions:
-                table = deletion['table_name']
-                record_id = deletion['record_id']
+        for deletion in pending_deletions:
+            table = deletion['table_name']
+            record_id = deletion['record_id']
 
-                id_columns = {
-                    'properties': 'p_id',
-                    'property_links': 'link_id',
-                    'property_photos': 'photo_id',
-                    'property_documents': 'doc_id'
-                }
-                id_column = id_columns.get(table, f"{table[:-1]}_id")
+            id_columns = {
+                'properties': 'p_id',
+                'property_links': 'link_id',
+                'property_photos': 'photo_id',
+                'property_documents': 'doc_id'
+            }
+            id_column = id_columns.get(table, f"{table[:-1]}_id")
 
-                try:
-                    self.supabase.table(table).delete().eq(id_column, record_id).execute()
-                    cursor.execute('UPDATE sync_deletions SET cloud_deleted = TRUE WHERE deletion_id = %s', (deletion['deletion_id'],))
-                except Exception as e:
-                    logger.debug(f"Will retry cloud deletion later for {table} {record_id}: {e}")
-
-            conn.commit()
-
-            # PHASE 0.5: Pull deletions from cloud and apply locally
             try:
-                cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
-                result = cursor.fetchone()
-                last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
-
-                id_columns = {
-                    'properties': 'p_id',
-                    'property_links': 'link_id',
-                    'property_photos': 'photo_id',
-                    'property_documents': 'doc_id'
-                }
-
-                for table_name in ['properties', 'property_links', 'property_photos', 'property_documents']:
-                    id_column = id_columns[table_name]
-
-                    cloud_deletions = self.supabase.table('sync_deletions')\
-                        .select('*')\
-                        .eq('table_name', table_name)\
-                        .gt('deleted_at', last_sync)\
-                        .execute()
-
-                    for deletion in cloud_deletions.data:
-                        cursor.execute(f"DELETE FROM {table_name} WHERE {id_column} = %s", (deletion['record_id'],))
-                        if table_name == 'properties':
-                            cursor.execute("DELETE FROM file_sync WHERE local_path LIKE %s", (f"%/p_{deletion['record_id']}/%",))
-
-                    if cloud_deletions.data:
-                        logger.debug(f"Applied {len(cloud_deletions.data)} {table_name} deletions from cloud")
-
+                self.supabase.table(table).delete().eq(id_column, record_id).execute()
+                cursor.execute('UPDATE sync_deletions SET cloud_deleted = TRUE WHERE deletion_id = %s', (deletion['deletion_id'],))
             except Exception as e:
-                logger.debug(f"Error pulling deletions from cloud: {e}")
+                logger.debug(f"Will retry cloud deletion later for {table} {record_id}: {e}")
 
-            # PHASE 1: Pull owners from cloud
-            cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM owners")
+        conn.commit()
+
+        # PHASE 0.5: Pull deletions from cloud and apply locally
+        try:
+            cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
             result = cursor.fetchone()
-            owners_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
+            last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
 
-            cloud_owners = self.supabase.table('owners')\
-                .select('*')\
-                .gt('modified_at', owners_last_sync)\
-                .limit(self.sync_batch_size)\
-                .execute()
+            id_columns = {
+                'properties': 'p_id',
+                'property_links': 'link_id',
+                'property_photos': 'photo_id',
+                'property_documents': 'doc_id'
+            }
 
-            # EXPLICIT COLUMN WHITELIST - prevents duplicate column assignments
-            allowed_owner_columns = [
-                'or_id', 'o_type', 'or_fname', 'or_lname', 'or_email', 'or_phone', 'or_fax',
-                'o_fname', 'o_lname', 'o_2fname', 'o_2lname', 'o_3fname', 'o_3lname',
-                'o_4fname', 'o_4lname', 'o_5fname', 'o_5lname', 'o_company', 'o_multiple',
-                'o_other_owners', 'or_m_address', 'or_m_address2', 'or_m_city',
-                'or_m_state', 'or_m_zip', 'modified_at', 'sync_version'
-            ]
+            for table_name in ['properties', 'property_links', 'property_photos', 'property_documents']:
+                id_column = id_columns[table_name]
 
-            for cloud_owner in cloud_owners.data:
-                local_id = cloud_owner.get('or_id')
+                cloud_deletions = self.supabase.table('sync_deletions')\
+                    .select('*')\
+                    .eq('table_name', table_name)\
+                    .gt('deleted_at', last_sync)\
+                    .execute()
 
-                cursor.execute("""
-                    SELECT modified_at, sync_status FROM owners WHERE or_id = %s
-                """, (local_id,))
-                local_record = cursor.fetchone()
+                for deletion in cloud_deletions.data:
+                    cursor.execute(f"DELETE FROM {table_name} WHERE {id_column} = %s", (deletion['record_id'],))
+                    if table_name == 'properties':
+                        cursor.execute("DELETE FROM file_sync WHERE local_path LIKE %s", (f"%/p_{deletion['record_id']}/%",))
 
-                winner = 'cloud'
-                if local_record and local_record['sync_status'] == 'pending':
-                    if cloud_owner['modified_at'] > local_record['modified_at']:
-                        winner = 'cloud'
-                    else:
-                        winner = 'local'
-                        continue
+                if cloud_deletions.data:
+                    logger.debug(f"Applied {len(cloud_deletions.data)} {table_name} deletions from cloud")
 
-                if winner == 'cloud':
-                    stats['conflicts'].append({
-                        'table': 'owners',
-                        'id': local_id,
-                        'resolution': 'cloud_wins'
-                    })
+        except Exception as e:
+            logger.debug(f"Error pulling deletions from cloud: {e}")
 
-                # BUILD INSERT DATA USING EXPLICIT WHITELIST ONLY
-                insert_data = {'or_id': local_id}
+        # PHASE 1: Pull owners from cloud
+        cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM owners")
+        result = cursor.fetchone()
+        owners_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
+
+        cloud_owners = self.supabase.table('owners')\
+            .select('*')\
+            .gt('modified_at', owners_last_sync)\
+            .limit(self.sync_batch_size)\
+            .execute()
+
+        # EXPLICITLY DEFINE allowed columns for owners - NO sync_status, last_sync_at, sync_source
+        allowed_owner_columns = [
+            'or_id', 'o_type', 'or_fname', 'or_lname', 'or_email', 'or_phone', 'or_fax',
+            'o_fname', 'o_lname', 'o_2fname', 'o_2lname', 'o_3fname', 'o_3lname',
+            'o_4fname', 'o_4lname', 'o_5fname', 'o_5lname', 'o_company', 'o_multiple',
+            'o_other_owners', 'or_m_address', 'or_m_address2', 'or_m_city',
+            'or_m_state', 'or_m_zip', 'modified_at', 'sync_version'
+        ]
+
+        for cloud_owner in cloud_owners.data:
+            local_id = cloud_owner.get('or_id')
+            
+            # DETERMINE winner FIRST, before any database operations
+            winner = 'cloud'  # Default to cloud unless local is pending and newer
+            
+            cursor.execute("""
+                SELECT modified_at, sync_status FROM owners WHERE or_id = %s
+            """, (local_id,))
+            local_record = cursor.fetchone()
+
+            if local_record and local_record['sync_status'] == 'pending':
+                if cloud_owner['modified_at'] > local_record['modified_at']:
+                    winner = 'cloud'
+                else:
+                    winner = 'local'
+                    continue  # Skip this record, local wins
+
+            if winner == 'cloud':
+                stats['conflicts'].append({
+                    'table': 'owners',
+                    'id': local_id,
+                    'resolution': 'cloud_wins'
+                })
+
+                # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
+                owner_data = {}
                 for col in allowed_owner_columns:
-                    if col != 'or_id' and col in cloud_owner and cloud_owner[col] is not None:
-                        insert_data[col] = cloud_owner[col]
-
-                columns = list(insert_data.keys())
-                values = [insert_data[col] for col in columns]
+                    if col in cloud_owner:
+                        owner_data[col] = cloud_owner[col]
+                
+                # Ensure required fields exist
+                if 'or_id' not in owner_data or owner_data['or_id'] is None:
+                    continue  # Skip invalid records
+                
+                # Build SQL with EXPLICIT column list - NO dynamic filtering
+                columns = list(owner_data.keys())
                 placeholders = ', '.join(['%s'] * len(columns))
-                updates = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns if col != 'or_id'])
+                columns_str = ', '.join(columns)
+                
+                # Build updates for non-PK columns only - EXPLICITLY exclude sync metadata
+                update_parts = []
+                for col in columns:
+                    if col != 'or_id':
+                        update_parts.append(f"{col} = EXCLUDED.{col}")
+                
+                # Add sync metadata updates - ONLY HERE, never from cloud data
+                update_parts.extend([
+                    "sync_status = 'synced'",
+                    "last_sync_at = NOW()",
+                    "sync_source = 'cloud'"
+                ])
+                
+                updates_str = ', '.join(update_parts)
+                
+                values = [owner_data[col] for col in columns]
 
                 cursor.execute(f"""
-                    INSERT INTO owners ({', '.join(columns)})
+                    INSERT INTO owners ({columns_str})
                     VALUES ({placeholders})
                     ON CONFLICT (or_id) DO UPDATE SET
-                        {updates},
-                        sync_status = 'synced',
-                        last_sync_at = NOW(),
-                        sync_source = 'cloud'
+                    {updates_str}
                 """, tuple(values))
 
                 stats['owners_pulled'] += 1
 
-            # PHASE 2: Pull properties from cloud
-            cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
-            result = cursor.fetchone()
-            props_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
+        # PHASE 2: Pull properties from cloud
+        cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
+        result = cursor.fetchone()
+        props_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
 
-            cloud_props = self.supabase.table('properties')\
-                .select('*')\
-                .gt('modified_at', props_last_sync)\
-                .limit(self.sync_batch_size)\
-                .execute()
+        cloud_props = self.supabase.table('properties')\
+            .select('*')\
+            .gt('modified_at', props_last_sync)\
+            .limit(self.sync_batch_size)\
+            .execute()
 
-            # EXPLICIT COLUMN WHITELIST - prevents duplicate column assignments
-            allowed_prop_columns = [
-                'p_id', 'or_id', 'p_status_id', 'p_state', 'p_longstate', 'p_county',
-                'p_address', 'p_city', 'p_zip', 'p_apn', 'p_acres', 'p_sqft',
-                'p_terrain', 'p_short_legal', 'p_zoning', 'p_use', 'p_use_code',
-                'p_use_description', 'p_restrictions', 'p_flood', 'p_flood_description',
-                'p_environmental', 'p_price', 'p_liens', 'p_back_tax', 'p_base_tax',
-                'p_comp_market_value', 'p_county_market_value', 'p_county_assessed_value',
-                'p_sale_price', 'p_hoa', 'p_impact_fee', 'p_min_acceptable_offer',
-                'p_max_offer_amount', 'p_est_value', 'p_improvements', 'p_power',
-                'p_access', 'p_waste_system_requirement', 'p_water_system_requirement',
-                'p_survey', 'p_owned', 'p_aquired', 'p_listed', 'p_agent_name',
-                'p_agent_phone', 'p_viable', 'p_m_date', 'p_offer_accept_date',
-                'p_contract_expires_date', 'p_purchased_on', 'p_purchase_amount',
-                'p_purchase_closing_costs', 'p_closing_company_name_purchase',
-                'p_sold_on', 'p_buyer', 'p_sold_amount', 'p_sold_closing_costs',
-                'p_profit', 'p_closing_company_name_sale', 'p_plat_map_link',
-                'p_comments', 'p_note', 'p_betty_score', 'p_create_time',
-                'p_last_updated', 'p_status_last_updated', 'p_last_sold_date',
-                'p_last_sold_amount', 'p_last_transaction_date', 'p_last_transaction_doc_type',
-                'modified_at', 'sync_version', 'p_mail_image_1', 'p_mail_image_2'
-            ]
+        # EXPLICITLY DEFINE allowed columns for properties - NO sync_status, last_sync_at, sync_source
+        allowed_property_columns = [
+            'p_id', 'or_id', 'p_status_id', 'p_state', 'p_longstate', 'p_county',
+            'p_address', 'p_city', 'p_zip', 'p_apn', 'p_acres', 'p_sqft',
+            'p_terrain', 'p_short_legal', 'p_zoning', 'p_use', 'p_use_code',
+            'p_use_description', 'p_restrictions', 'p_flood', 'p_flood_description',
+            'p_environmental', 'p_price', 'p_liens', 'p_back_tax', 'p_base_tax',
+            'p_comp_market_value', 'p_county_market_value', 'p_county_assessed_value',
+            'p_sale_price', 'p_hoa', 'p_impact_fee', 'p_min_acceptable_offer',
+            'p_max_offer_amount', 'p_est_value', 'p_improvements', 'p_power',
+            'p_access', 'p_waste_system_requirement', 'p_water_system_requirement',
+            'p_survey', 'p_owned', 'p_aquired', 'p_listed', 'p_agent_name',
+            'p_agent_phone', 'p_viable', 'p_m_date', 'p_offer_accept_date',
+            'p_contract_expires_date', 'p_purchased_on', 'p_purchase_amount',
+            'p_purchase_closing_costs', 'p_closing_company_name_purchase',
+            'p_sold_on', 'p_buyer', 'p_sold_amount', 'p_sold_closing_costs',
+            'p_profit', 'p_closing_company_name_sale', 'p_plat_map_link',
+            'p_comments', 'p_note', 'p_betty_score', 'p_create_time',
+            'p_last_updated', 'p_status_last_updated', 'p_last_sold_date',
+            'p_last_sold_amount', 'p_last_transaction_date', 'p_last_transaction_doc_type',
+            'modified_at', 'sync_version', 'p_mail_image_1', 'p_mail_image_2'
+        ]
 
-            for cloud_prop in cloud_props.data:
-                local_id = cloud_prop.get('p_id')
+        for cloud_prop in cloud_props.data:
+            local_id = cloud_prop.get('p_id')
+            
+            # DETERMINE winner FIRST
+            winner = 'cloud'  # Default
+            
+            cursor.execute("""
+                SELECT modified_at, sync_status FROM properties WHERE p_id = %s
+            """, (local_id,))
+            local_record = cursor.fetchone()
 
-                cursor.execute("""
-                    SELECT modified_at, sync_status FROM properties WHERE p_id = %s
-                """, (local_id,))
-                local_record = cursor.fetchone()
+            if local_record and local_record['sync_status'] == 'pending':
+                if cloud_prop['modified_at'] > local_record['modified_at']:
+                    winner = 'cloud'
+                else:
+                    winner = 'local'
+                    continue  # Skip, local wins
 
-                winner = 'cloud'
-                if local_record and local_record['sync_status'] == 'pending':
-                    if cloud_prop['modified_at'] > local_record['modified_at']:
-                        winner = 'cloud'
-                    else:
-                        winner = 'local'
-                        continue
+            if winner == 'cloud':
+                stats['conflicts'].append({
+                    'table': 'properties',
+                    'id': local_id,
+                    'resolution': 'cloud_wins'
+                })
 
-                if winner == 'cloud':
-                    stats['conflicts'].append({
-                        'table': 'properties',
-                        'id': local_id,
-                        'resolution': 'cloud_wins'
-                    })
-
-                # BUILD INSERT DATA USING EXPLICIT WHITELIST ONLY
-                insert_data = {'p_id': local_id}
-                for col in allowed_prop_columns:
-                    if col != 'p_id' and col in cloud_prop and cloud_prop[col] is not None:
-                        insert_data[col] = cloud_prop[col]
-
-                columns = list(insert_data.keys())
-                values = [insert_data[col] for col in columns]
+                # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
+                prop_data = {}
+                for col in allowed_property_columns:
+                    if col in cloud_prop:
+                        prop_data[col] = cloud_prop[col]
+                
+                if 'p_id' not in prop_data or prop_data['p_id'] is None:
+                    continue
+                
+                columns = list(prop_data.keys())
                 placeholders = ', '.join(['%s'] * len(columns))
-                updates = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns if col != 'p_id'])
+                columns_str = ', '.join(columns)
+                
+                update_parts = []
+                for col in columns:
+                    if col != 'p_id':
+                        update_parts.append(f"{col} = EXCLUDED.{col}")
+                
+                # Add sync metadata updates - ONLY HERE, never from cloud data
+                update_parts.extend([
+                    "sync_status = 'synced'",
+                    "last_sync_at = NOW()",
+                    "sync_source = 'cloud'"
+                ])
+                
+                updates_str = ', '.join(update_parts)
+                
+                values = [prop_data[col] for col in columns]
 
                 cursor.execute(f"""
-                    INSERT INTO properties ({', '.join(columns)})
+                    INSERT INTO properties ({columns_str})
                     VALUES ({placeholders})
                     ON CONFLICT (p_id) DO UPDATE SET
-                        {updates},
-                        sync_status = 'synced',
-                        last_sync_at = NOW(),
-                        sync_source = 'cloud'
+                    {updates_str}
                 """, tuple(values))
 
                 stats['properties_pulled'] += 1
 
-            # PHASE 3: Pull property links from cloud
-            try:
-                cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM property_links")
-                result = cursor.fetchone()
-                links_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
+        # PHASE 3: Pull property links from cloud
+        try:
+            cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM property_links")
+            result = cursor.fetchone()
+            links_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
 
-                cloud_links = self.supabase.table('property_links')\
-                    .select('*')\
-                    .gt('modified_at', links_last_sync)\
-                    .execute()
+            cloud_links = self.supabase.table('property_links')\
+                .select('*')\
+                .gt('modified_at', links_last_sync)\
+                .execute()
 
-                for link in cloud_links.data:
-                    try:
-                        added_date = link.get('added_date')
-                        if isinstance(added_date, str):
-                            pass
-                        elif isinstance(added_date, datetime):
-                            added_date = added_date.isoformat()
-                        else:
-                            added_date = datetime.now().isoformat()
+            for link in cloud_links.data:
+                try:
+                    added_date = link.get('added_date')
+                    if isinstance(added_date, str):
+                        pass
+                    elif isinstance(added_date, datetime):
+                        added_date = added_date.isoformat()
+                    else:
+                        added_date = datetime.now().isoformat()
 
-                        modified_at = link.get('modified_at')
-                        if isinstance(modified_at, str):
-                            pass
-                        elif isinstance(modified_at, datetime):
-                            modified_at = modified_at.isoformat()
-                        else:
-                            modified_at = datetime.now().isoformat()
+                    modified_at = link.get('modified_at')
+                    if isinstance(modified_at, str):
+                        pass
+                    elif isinstance(modified_at, datetime):
+                        modified_at = modified_at.isoformat()
+                    else:
+                        modified_at = datetime.now().isoformat()
 
-                        cursor.execute("""
-                            INSERT INTO property_links
-                            (link_id, p_id, url, description, added_date, modified_at, sync_status, last_sync_at, sync_version)
-                            VALUES (%s, %s, %s, %s, %s, %s, 'synced', NOW(), 1)
-                            ON CONFLICT (link_id) DO UPDATE SET
-                                p_id = EXCLUDED.p_id,
-                                url = EXCLUDED.url,
-                                description = EXCLUDED.description,
-                                added_date = EXCLUDED.added_date,
-                                modified_at = EXCLUDED.modified_at,
-                                sync_status = 'synced',
-                                last_sync_at = NOW(),
-                                sync_version = EXCLUDED.sync_version
-                        """, (link['link_id'], link['p_id'], link['url'],
-                              link.get('description', ''), added_date, modified_at))
+                    cursor.execute("""
+                        INSERT INTO property_links
+                        (link_id, p_id, url, description, added_date, modified_at, sync_status, last_sync_at, sync_version)
+                        VALUES (%s, %s, %s, %s, %s, %s, 'synced', NOW(), 1)
+                        ON CONFLICT (link_id) DO UPDATE SET
+                        p_id = EXCLUDED.p_id,
+                        url = EXCLUDED.url,
+                        description = EXCLUDED.description,
+                        added_date = EXCLUDED.added_date,
+                        modified_at = EXCLUDED.modified_at,
+                        sync_status = 'synced',
+                        last_sync_at = NOW(),
+                        sync_version = EXCLUDED.sync_version
+                    """, (link['link_id'], link['p_id'], link['url'],
+                          link.get('description', ''), added_date, modified_at))
 
-                        stats['links_pulled'] = stats.get('links_pulled', 0) + 1
+                    stats['links_pulled'] = stats.get('links_pulled', 0) + 1
 
-                    except Exception as link_error:
-                        logger.debug(f"Warning: Could not pull link {link.get('link_id')}: {link_error}")
-                        continue
+                except Exception as link_error:
+                    logger.debug(f"Warning: Could not pull link {link.get('link_id')}: {link_error}")
+                    continue
 
-                logger.debug(f"Pulled {stats.get('links_pulled', 0)} new/changed links from cloud")
-
-            except Exception as e:
-                logger.debug(f"Error pulling links: {e}")
-
-            # PHASE 4: Pull property photos and documents from cloud
-            try:
-                self._pull_property_files_from_cloud(cursor, stats)
-            except Exception as e:
-                logger.debug(f"Error pulling property files from cloud: {e}")
-
-            # Cleanup: Remove successfully synced tombstones older than 7 days
-            cursor.execute('''
-                DELETE FROM sync_deletions
-                WHERE sync_status = 'synced'
-                AND deleted_at < NOW() - INTERVAL '7 days'
-            ''')
-
-            conn.commit()
+            logger.debug(f"Pulled {stats.get('links_pulled', 0)} new/changed links from cloud")
 
         except Exception as e:
-            conn.rollback()
-            logger.debug(f"PULL ERROR: {e}")
-            import traceback
-            logger.debug(traceback.format_exc())
-            raise e
-        finally:
-            cursor.close()
-            conn.close()
+            logger.debug(f"Error pulling links: {e}")
 
-        return stats
+        # PHASE 4: Pull property photos and documents from cloud
+        try:
+            self._pull_property_files_from_cloud(cursor, stats)
+        except Exception as e:
+            logger.debug(f"Error pulling property files from cloud: {e}")
+
+        # Cleanup: Remove successfully synced tombstones older than 7 days
+        cursor.execute('''
+            DELETE FROM sync_deletions
+            WHERE sync_status = 'synced'
+            AND deleted_at < NOW() - INTERVAL '7 days'
+        ''')
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        logger.debug(f"PULL ERROR: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        raise e
+    finally:
+        cursor.close()
+        conn.close()
+
+    return stats
         
     def _pull_property_files_from_cloud(self, cursor, stats):
         """Pull property_photos and property_documents records from cloud to local"""

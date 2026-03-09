@@ -17,6 +17,8 @@ import re
 import logging
 import sys
 
+logger = logging.getLogger(__name__)
+
 if getattr(sys, 'frozen', False):
     # EXE mode - log to file next to EXE
     log_path = os.path.join(os.path.dirname(sys.executable), 'app_debug.log')
