@@ -177,7 +177,7 @@ class ValiantLandSync:
         except Exception as e:
             import traceback
             error_msg = str(e)
-            logger.debug("SYNC ERROR:", error_msg)
+            logger.debug("SYNC ERROR: %s", error_msg)
             logger.debug(traceback.format_exc())
             stats['errors'].append(error_msg)
             
