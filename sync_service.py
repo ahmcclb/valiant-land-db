@@ -82,6 +82,29 @@ class ValiantLandSync:
         
     def get_local_connection(self):
         return psycopg2.connect(**self.local_config)
+        
+    def _get_cloud_mail_image_paths(self, p_id: int) -> set:
+        """Return known mail-image paths/filenames for a property from Supabase properties."""
+        paths = set()
+        try:
+            response = self.supabase.table('properties')\
+                .select('p_mail_image_1,p_mail_image_2')\
+                .eq('p_id', p_id)\
+                .limit(1)\
+                .execute()
+
+            if response.data:
+                row = response.data[0]
+                for key in ('p_mail_image_1', 'p_mail_image_2'):
+                    value = row.get(key)
+                    if value:
+                        normalized = str(value).replace('\\', '/')
+                        paths.add(normalized)
+                        paths.add(os.path.basename(normalized))
+        except Exception as e:
+            logger.debug(f"Warning: Could not fetch cloud mail image paths for property {p_id}: {e}")
+
+        return paths
     
     def sync_reference_tables(self) -> dict:
         """Sync small reference tables (statuses, tags) that properties depend on"""
@@ -898,8 +921,8 @@ class ValiantLandSync:
                     if not file_path:
                         continue
 
-                    # Skip mail images - these belong in properties.p_mail_image_1 / p_mail_image_2,
-                    # not in property_photos for normal photo rendering
+                    # Skip mail images - check both local property fields and cloud property fields
+                    local_mail_paths = set()
                     cursor.execute("""
                         SELECT p_mail_image_1, p_mail_image_2
                         FROM properties
@@ -908,12 +931,21 @@ class ValiantLandSync:
                     prop_row = cursor.fetchone()
 
                     if prop_row:
-                        mail_1 = (prop_row['p_mail_image_1'] or '').replace('\\', '/')
-                        mail_2 = (prop_row['p_mail_image_2'] or '').replace('\\', '/')
+                        for key in ('p_mail_image_1', 'p_mail_image_2'):
+                            value = prop_row.get(key)
+                            if value:
+                                normalized = str(value).replace('\\', '/')
+                                local_mail_paths.add(normalized)
+                                local_mail_paths.add(os.path.basename(normalized))
 
-                        if file_path == mail_1 or file_path == mail_2:
-                            logger.debug(f"Skipping mail image in property_photos pull for p_id {p_id}: {file_path}")
-                            continue
+                    cloud_mail_paths = self._get_cloud_mail_image_paths(p_id)
+
+                    file_name = os.path.basename(file_path)
+                    all_mail_paths = local_mail_paths | cloud_mail_paths
+
+                    if file_path in all_mail_paths or file_name in all_mail_paths:
+                        logger.debug(f"Skipping mail image in property_photos pull for p_id {p_id}: {file_path}")
+                        continue
 
                     # DEDUPE by logical identity: p_id + file_path
                     cursor.execute("""
@@ -1428,12 +1460,31 @@ class ValiantLandSync:
                                 logger.debug(f"  Property {p_id} not yet synced, skipping DB link")
                                 continue
                             
-                            # Check if mail image
+                            # Check if mail image using both local and cloud property metadata
+                            local_mail_match = False
                             cursor.execute("""
-                                SELECT 1 FROM properties 
-                                WHERE p_id = %s AND (p_mail_image_1 LIKE %s OR p_mail_image_2 LIKE %s)
-                            """, (p_id, f'%{filename}', f'%{filename}'))
-                            is_mail_image = cursor.fetchone() is not None
+                                SELECT p_mail_image_1, p_mail_image_2
+                                FROM properties
+                                WHERE p_id = %s
+                            """, (p_id,))
+                            prop_row = cursor.fetchone()
+
+                            local_mail_paths = set()
+                            if prop_row:
+                                for key in ('p_mail_image_1', 'p_mail_image_2'):
+                                    value = prop_row.get(key)
+                                    if value:
+                                        normalized = str(value).replace('\\', '/')
+                                        local_mail_paths.add(normalized)
+                                        local_mail_paths.add(os.path.basename(normalized))
+
+                            cloud_mail_paths = self._get_cloud_mail_image_paths(p_id)
+                            all_mail_paths = local_mail_paths | cloud_mail_paths
+
+                            is_mail_image = (
+                                filename in all_mail_paths
+                                or normalized_relative_path in all_mail_paths
+                            )
                             
                             if not is_mail_image:
                                 if self._is_photo_file(filename):
