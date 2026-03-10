@@ -241,8 +241,12 @@ class ValiantLandSync:
             cursor.execute("""
                 SELECT o.* 
                 FROM owners o
-                WHERE o.sync_status = 'pending' 
-                   OR o.modified_at > COALESCE(o.last_sync_at, '1970-01-01')
+                WHERE o.sync_status = 'pending'
+                   OR (
+                        o.last_sync_at IS NOT NULL
+                        AND o.modified_at IS NOT NULL
+                        AND o.modified_at > o.last_sync_at
+                   )
                 ORDER BY o.or_id
                 LIMIT %s
             """, (self.sync_batch_size,))
@@ -299,8 +303,12 @@ class ValiantLandSync:
             cursor.execute("""
                 SELECT p.* 
                 FROM properties p
-                WHERE p.sync_status = 'pending' 
-                OR p.modified_at > COALESCE(p.last_sync_at, '1970-01-01')
+                WHERE p.sync_status = 'pending'
+                   OR (
+                        p.last_sync_at IS NOT NULL
+                        AND p.modified_at IS NOT NULL
+                        AND p.modified_at > p.last_sync_at
+                   )
                 ORDER BY p.p_id
                 LIMIT %s
             """, (self.sync_batch_size,))
@@ -668,8 +676,8 @@ class ValiantLandSync:
                     values = [owner_data[col] for col in columns]
 
                     cursor.execute(f"""
-                        INSERT INTO owners ({columns_str})
-                        VALUES ({placeholders})
+                        INSERT INTO owners ({columns_str}, sync_status, last_sync_at, sync_source)
+                        VALUES ({placeholders}, 'synced', NOW(), 'cloud')
                         ON CONFLICT (or_id) DO UPDATE SET
                         {updates_str}
                     """, tuple(values))
@@ -765,8 +773,8 @@ class ValiantLandSync:
                     values = [prop_data[col] for col in columns]
 
                     cursor.execute(f"""
-                        INSERT INTO properties ({columns_str})
-                        VALUES ({placeholders})
+                        INSERT INTO properties ({columns_str}, sync_status, last_sync_at, sync_source)
+                        VALUES ({placeholders}, 'synced', NOW(), 'cloud')
                         ON CONFLICT (p_id) DO UPDATE SET
                         {updates_str}
                     """, tuple(values))
