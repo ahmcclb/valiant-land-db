@@ -78,6 +78,11 @@ class ValiantLandSync:
             supabase_url or config['supabase_url'], 
             supabase_key or config['supabase_key']
         )
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.static_path = os.path.join(self.base_dir, 'static')
+        self.uploads_path = os.path.join(self.static_path, 'uploads')
+        self.photos_path = os.path.join(self.uploads_path, 'photos')
+        self.documents_path = os.path.join(self.uploads_path, 'documents')
         self.sync_batch_size = 5000
         
     def get_local_connection(self):
@@ -105,6 +110,45 @@ class ValiantLandSync:
             logger.debug(f"Warning: Could not fetch cloud mail image paths for property {p_id}: {e}")
 
         return paths
+
+    def _delete_local_file_and_prune(self, relative_path: str):
+        """Delete a local file by app-relative path and remove empty parent p_id folder if possible."""
+        try:
+            if not relative_path:
+                return
+
+            normalized = relative_path.replace('\\', '/')
+            absolute_path = os.path.normpath(os.path.join(self.static_path, *normalized.split('/')))
+
+            if os.path.exists(absolute_path) and os.path.isfile(absolute_path):
+                os.remove(absolute_path)
+                logger.debug(f"Deleted local file: {absolute_path}")
+
+            parent_dir = os.path.dirname(absolute_path)
+            if os.path.isdir(parent_dir) and not os.listdir(parent_dir):
+                os.rmdir(parent_dir)
+                logger.debug(f"Deleted empty folder: {parent_dir}")
+
+        except Exception as e:
+            logger.debug(f"Warning: Could not delete local file/folder for {relative_path}: {e}")
+
+
+    def _get_record_file_path(self, cursor, table_name: str, record_id: int) -> Optional[str]:
+        """Return file_path for a property_photos/property_documents record before deletion."""
+        try:
+            if table_name == 'property_photos':
+                cursor.execute("SELECT file_path FROM property_photos WHERE photo_id = %s", (record_id,))
+            elif table_name == 'property_documents':
+                cursor.execute("SELECT file_path FROM property_documents WHERE doc_id = %s", (record_id,))
+            else:
+                return None
+
+            row = cursor.fetchone()
+            return row['file_path'] if row and row.get('file_path') else None
+
+        except Exception as e:
+            logger.debug(f"Warning: Could not fetch file_path for {table_name} {record_id}: {e}")
+            return None
     
     def sync_reference_tables(self) -> dict:
         """Sync small reference tables (statuses, tags) that properties depend on"""
@@ -611,9 +655,21 @@ class ValiantLandSync:
                         .execute()
 
                     for deletion in cloud_deletions.data:
-                        cursor.execute(f"DELETE FROM {table_name} WHERE {id_column} = %s", (deletion['record_id'],))
+                        record_id = deletion['record_id']
+
+                        # Capture file_path before deleting DB rows
+                        file_path = None
+                        if table_name in ('property_photos', 'property_documents'):
+                            file_path = self._get_record_file_path(cursor, table_name, record_id)
+
+                        cursor.execute(f"DELETE FROM {table_name} WHERE {id_column} = %s", (record_id,))
+
                         if table_name == 'properties':
-                            cursor.execute("DELETE FROM file_sync WHERE local_path LIKE %s", (f"%/p_{deletion['record_id']}/%",))
+                            cursor.execute("DELETE FROM file_sync WHERE local_path LIKE %s", (f"%/p_{record_id}/%",))
+
+                        elif table_name in ('property_photos', 'property_documents') and file_path:
+                            cursor.execute("DELETE FROM file_sync WHERE local_path = %s OR cloud_path = %s", (file_path, deletion.get('cloud_path')))
+                            self._delete_local_file_and_prune(file_path)
 
                     if cloud_deletions.data:
                         logger.debug(f"Applied {len(cloud_deletions.data)} {table_name} deletions from cloud")
@@ -1389,14 +1445,12 @@ class ValiantLandSync:
                 normalized_relative_path = relative_path.replace('\\', '/')
                 
                 # Build local path
-                absolute_path = os.path.join(BASE_DIR, 'static', *normalized_relative_path.split('/'))
+                absolute_path = os.path.join(self.static_path, *normalized_relative_path.split('/'))
                 absolute_path = os.path.normpath(absolute_path)
-                
+
                 logger.debug(f"BASE_DIR: {BASE_DIR}")
-                logger.debug(f"STATIC_PATH: {STATIC_PATH}")
+                logger.debug(f"static_path: {self.static_path}")
                 logger.debug(f"Target download path: {absolute_path}")
-                logger.debug(f"Processing: {filename}")
-                logger.debug(f"  Target path: {absolute_path}")
                 
                 # Check if already have current version
                 cursor.execute("""
@@ -1536,35 +1590,83 @@ class ValiantLandSync:
             stats['failed'].append(f"List error: {str(e)}")
             
     def _reconcile_downloaded_files(self, cursor, conn):
-        """Ensure property_photos/property_documents records exist for downloaded files"""
+        """Ensure property_photos/property_documents records exist for downloaded files that still exist locally."""
         try:
-            # Find downloaded photos without database records
+            # Reconcile photos
             cursor.execute("""
-                SELECT fs.local_path 
+                SELECT fs.local_path
                 FROM file_sync fs
                 LEFT JOIN property_photos pp ON fs.local_path = pp.file_path
                 WHERE fs.local_path LIKE 'uploads/photos/%'
-                AND pp.photo_id IS NULL
+                  AND fs.sync_status = 'synced'
+                  AND pp.photo_id IS NULL
             """)
-            
+
             for row in cursor.fetchall():
                 local_path = row['local_path']
                 filename = os.path.basename(local_path)
                 p_id = self._extract_property_id_from_filename(filename)
-                
+
+                absolute_path = os.path.normpath(os.path.join(self.static_path, *local_path.replace('\\', '/').split('/')))
+                if not os.path.exists(absolute_path):
+                    continue
+
                 if p_id:
-                    # Check if property exists now
+                    cursor.execute("SELECT p_id, p_mail_image_1, p_mail_image_2 FROM properties WHERE p_id = %s", (p_id,))
+                    prop_row = cursor.fetchone()
+                    if not prop_row:
+                        continue
+
+                    # Skip mail images
+                    mail_paths = set()
+                    for key in ('p_mail_image_1', 'p_mail_image_2'):
+                        value = prop_row.get(key)
+                        if value:
+                            normalized = str(value).replace('\\', '/')
+                            mail_paths.add(normalized)
+                            mail_paths.add(os.path.basename(normalized))
+
+                    if local_path in mail_paths or filename in mail_paths:
+                        continue
+
+                    cursor.execute("""
+                        INSERT INTO property_photos (p_id, file_path, file_name, upload_date, is_primary, caption)
+                        VALUES (%s, %s, %s, NOW(), FALSE, '')
+                    """, (p_id, local_path, filename))
+
+            # Reconcile documents
+            cursor.execute("""
+                SELECT fs.local_path
+                FROM file_sync fs
+                LEFT JOIN property_documents pd ON fs.local_path = pd.file_path
+                WHERE fs.local_path LIKE 'uploads/documents/%'
+                  AND fs.sync_status = 'synced'
+                  AND pd.doc_id IS NULL
+            """)
+
+            for row in cursor.fetchall():
+                local_path = row['local_path']
+                filename = os.path.basename(local_path)
+                p_id = self._extract_property_id_from_filename(filename)
+
+                absolute_path = os.path.normpath(os.path.join(self.static_path, *local_path.replace('\\', '/').split('/')))
+                if not os.path.exists(absolute_path):
+                    continue
+
+                if p_id:
                     cursor.execute("SELECT p_id FROM properties WHERE p_id = %s", (p_id,))
-                    if cursor.fetchone():
-                        cursor.execute("""
-                            INSERT INTO property_photos (p_id, file_path, file_name, upload_date, is_primary, caption)
-                            VALUES (%s, %s, %s, NOW(), FALSE, '')
-                            ON CONFLICT DO NOTHING
-                        """, (p_id, local_path, filename))
-            
+                    if not cursor.fetchone():
+                        continue
+
+                    doc_type = os.path.splitext(filename)[1].lower()
+                    cursor.execute("""
+                        INSERT INTO property_documents (p_id, file_path, file_name, upload_date, doc_type, description)
+                        VALUES (%s, %s, %s, NOW(), %s, '')
+                    """, (p_id, local_path, filename, doc_type))
+
             conn.commit()
-            logger.info("Reconciled missing photo records from downloaded files")
-            
+            logger.info("Reconciled missing photo/document records from downloaded files")
+
         except Exception as e:
             logger.error(f"Error reconciling downloaded files: {e}")
             
