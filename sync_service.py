@@ -879,43 +879,95 @@ class ValiantLandSync:
             
             for photo in cloud_photos.data:
                 try:
-                    # Normalize path separators to forward slashes for consistency
-                    file_path = photo.get('file_path', '').replace('\\', '/')
-                    cloud_path = photo.get('cloud_path', '')
-                    
-                    # CRITICAL FIX: Use ON CONFLICT DO UPDATE to handle existing records
-                    # But also handle the case where photo_id is NULL (shouldn't happen but safety check)
-                    if not photo.get('photo_id'):
+                    if not photo.get('photo_id') or not photo.get('p_id'):
                         continue
-                    
+
+                    # Normalize path separators
+                    file_path = (photo.get('file_path') or '').replace('\\', '/')
+                    cloud_path = (photo.get('cloud_path') or '').replace('\\', '/')
+                    p_id = photo['p_id']
+
+                    if not file_path:
+                        continue
+
+                    # Skip mail images - these belong in properties.p_mail_image_1 / p_mail_image_2,
+                    # not in property_photos for normal photo rendering
                     cursor.execute("""
-                        INSERT INTO property_photos 
-                        (photo_id, p_id, file_path, file_name, upload_date, caption, is_primary, cloud_path, modified_at, sync_status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'synced')
-                        ON CONFLICT (photo_id) DO UPDATE SET
-                        p_id = EXCLUDED.p_id,
-                        file_path = EXCLUDED.file_path,
-                        file_name = EXCLUDED.file_name,
-                        upload_date = EXCLUDED.upload_date,
-                        caption = EXCLUDED.caption,
-                        is_primary = EXCLUDED.is_primary,
-                        cloud_path = EXCLUDED.cloud_path,
-                        modified_at = EXCLUDED.modified_at,
-                        sync_status = 'synced'
-                    """, (
-                        photo['photo_id'], 
-                        photo['p_id'], 
-                        file_path, 
-                        photo.get('file_name'), 
-                        photo.get('upload_date'),
-                        photo.get('caption'), 
-                        photo.get('is_primary', False), 
-                        cloud_path,
-                        photo.get('modified_at', datetime.now().isoformat())
-                    ))
-                    
+                        SELECT p_mail_image_1, p_mail_image_2
+                        FROM properties
+                        WHERE p_id = %s
+                    """, (p_id,))
+                    prop_row = cursor.fetchone()
+
+                    if prop_row:
+                        mail_1 = (prop_row['p_mail_image_1'] or '').replace('\\', '/')
+                        mail_2 = (prop_row['p_mail_image_2'] or '').replace('\\', '/')
+
+                        if file_path == mail_1 or file_path == mail_2:
+                            logger.debug(f"Skipping mail image in property_photos pull for p_id {p_id}: {file_path}")
+                            continue
+
+                    # DEDUPE by logical identity: p_id + file_path
+                    cursor.execute("""
+                        SELECT photo_id
+                        FROM property_photos
+                        WHERE p_id = %s AND file_path = %s
+                        ORDER BY photo_id DESC
+                        LIMIT 1
+                    """, (p_id, file_path))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        cursor.execute("""
+                            UPDATE property_photos
+                            SET file_name = %s,
+                                upload_date = %s,
+                                caption = %s,
+                                is_primary = %s,
+                                cloud_path = %s,
+                                modified_at = %s,
+                                sync_status = 'synced',
+                                sync_version = COALESCE(sync_version, 1)
+                            WHERE p_id = %s AND file_path = %s
+                        """, (
+                            photo.get('file_name'),
+                            photo.get('upload_date'),
+                            photo.get('caption'),
+                            photo.get('is_primary', False),
+                            cloud_path,
+                            photo.get('modified_at', datetime.now().isoformat()),
+                            p_id,
+                            file_path
+                        ))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO property_photos
+                            (photo_id, p_id, file_path, file_name, upload_date, caption, is_primary, cloud_path, modified_at, sync_status, sync_version)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'synced', 1)
+                            ON CONFLICT (photo_id) DO UPDATE SET
+                            p_id = EXCLUDED.p_id,
+                            file_path = EXCLUDED.file_path,
+                            file_name = EXCLUDED.file_name,
+                            upload_date = EXCLUDED.upload_date,
+                            caption = EXCLUDED.caption,
+                            is_primary = EXCLUDED.is_primary,
+                            cloud_path = EXCLUDED.cloud_path,
+                            modified_at = EXCLUDED.modified_at,
+                            sync_status = 'synced'
+                        """, (
+                            photo['photo_id'],
+                            p_id,
+                            file_path,
+                            photo.get('file_name'),
+                            photo.get('upload_date'),
+                            photo.get('caption'),
+                            photo.get('is_primary', False),
+                            cloud_path,
+                            photo.get('modified_at', datetime.now().isoformat())
+                        ))
+
                     stats['photos_pulled'] = stats.get('photos_pulled', 0) + 1
-                    
+
                 except Exception as e:
                     logger.error(f"Error pulling photo {photo.get('photo_id')}: {e}")
                     continue
@@ -934,43 +986,130 @@ class ValiantLandSync:
             
             for doc in cloud_docs.data:
                 try:
-                    file_path = doc.get('file_path', '').replace('\\', '/')
-                    cloud_path = doc.get('cloud_path', '')
-                    
-                    if not doc.get('doc_id'):
+                    if not doc.get('doc_id') or not doc.get('p_id'):
                         continue
-                    
+
+                    file_path = (doc.get('file_path') or '').replace('\\', '/')
+                    cloud_path = (doc.get('cloud_path') or '').replace('\\', '/')
+                    p_id = doc['p_id']
+
+                    if not file_path:
+                        continue
+
+                    # DEDUPE by logical identity: p_id + file_path
                     cursor.execute("""
-                        INSERT INTO property_documents 
-                        (doc_id, p_id, file_path, file_name, doc_type, upload_date, description, cloud_path, modified_at, sync_status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'synced')
-                        ON CONFLICT (doc_id) DO UPDATE SET
-                        p_id = EXCLUDED.p_id,
-                        file_path = EXCLUDED.file_path,
-                        file_name = EXCLUDED.file_name,
-                        doc_type = EXCLUDED.doc_type,
-                        upload_date = EXCLUDED.upload_date,
-                        description = EXCLUDED.description,
-                        cloud_path = EXCLUDED.cloud_path,
-                        modified_at = EXCLUDED.modified_at,
-                        sync_status = 'synced'
-                    """, (
-                        doc['doc_id'],
-                        doc['p_id'], 
-                        file_path,
-                        doc.get('file_name'), 
-                        doc.get('doc_type'), 
-                        doc.get('upload_date'), 
-                        doc.get('description'), 
-                        cloud_path,
-                        doc.get('modified_at', datetime.now().isoformat())
-                    ))
-                    
+                        SELECT doc_id
+                        FROM property_documents
+                        WHERE p_id = %s AND file_path = %s
+                        ORDER BY doc_id DESC
+                        LIMIT 1
+                    """, (p_id, file_path))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        cursor.execute("""
+                            UPDATE property_documents
+                            SET file_name = %s,
+                                doc_type = %s,
+                                upload_date = %s,
+                                description = %s,
+                                cloud_path = %s,
+                                modified_at = %s,
+                                sync_status = 'synced',
+                                sync_version = COALESCE(sync_version, 1)
+                            WHERE p_id = %s AND file_path = %s
+                        """, (
+                            doc.get('file_name'),
+                            doc.get('doc_type'),
+                            doc.get('upload_date'),
+                            doc.get('description'),
+                            cloud_path,
+                            doc.get('modified_at', datetime.now().isoformat()),
+                            p_id,
+                            file_path
+                        ))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO property_documents
+                            (doc_id, p_id, file_path, file_name, doc_type, upload_date, description, cloud_path, modified_at, sync_status, sync_version)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'synced', 1)
+                            ON CONFLICT (doc_id) DO UPDATE SET
+                            p_id = EXCLUDED.p_id,
+                            file_path = EXCLUDED.file_path,
+                            file_name = EXCLUDED.file_name,
+                            doc_type = EXCLUDED.doc_type,
+                            upload_date = EXCLUDED.upload_date,
+                            description = EXCLUDED.description,
+                            cloud_path = EXCLUDED.cloud_path,
+                            modified_at = EXCLUDED.modified_at,
+                            sync_status = 'synced'
+                        """, (
+                            doc['doc_id'],
+                            p_id,
+                            file_path,
+                            doc.get('file_name'),
+                            doc.get('doc_type'),
+                            doc.get('upload_date'),
+                            doc.get('description'),
+                            cloud_path,
+                            doc.get('modified_at', datetime.now().isoformat())
+                        ))
+
                     stats['documents_pulled'] = stats.get('documents_pulled', 0) + 1
-                    
+
                 except Exception as e:
                     logger.error(f"Error pulling document {doc.get('doc_id')}: {e}")
                     continue
+            # Cleanup duplicate photos by keeping the newest row for each (p_id, file_path)
+            cursor.execute("""
+                DELETE FROM property_photos
+                WHERE photo_id IN (
+                    SELECT photo_id
+                    FROM (
+                        SELECT photo_id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY p_id, file_path
+                                   ORDER BY modified_at DESC NULLS LAST, photo_id DESC
+                               ) AS rn
+                        FROM property_photos
+                    ) ranked
+                    WHERE ranked.rn > 1
+                )
+            """)
+
+            # Cleanup duplicate documents by keeping the newest row for each (p_id, file_path)
+            cursor.execute("""
+                DELETE FROM property_documents
+                WHERE doc_id IN (
+                    SELECT doc_id
+                    FROM (
+                        SELECT doc_id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY p_id, file_path
+                                   ORDER BY modified_at DESC NULLS LAST, doc_id DESC
+                               ) AS rn
+                        FROM property_documents
+                    ) ranked
+                    WHERE ranked.rn > 1
+                )
+            """)
+            
+            # Cleanup duplicate links by keeping the newest row for each (p_id, url)
+            cursor.execute("""
+                DELETE FROM property_links
+                WHERE link_id IN (
+                    SELECT link_id
+                    FROM (
+                        SELECT link_id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY p_id, url
+                                   ORDER BY modified_at DESC NULLS LAST, link_id DESC
+                               ) AS rn
+                        FROM property_links
+                    ) ranked
+                    WHERE ranked.rn > 1
+                )
+            """)
             
             # Reset sequences again after all inserts
             self._reset_sequences(cursor)
