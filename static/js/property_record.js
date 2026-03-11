@@ -816,12 +816,10 @@ function deleteMailImage(index) {
     .then(response => response.json())
     .then(result => {
         if (result.success) {
-            mailImages.splice(index, 1);
-            if (mailImages.length === 1) {
-                mailImages[0].slot = 1;
-            }
-            renderMailImages();
+            loadPropertyData();
             showMessage('Mail image deleted', 'success');
+        } else {
+            alert('Error: ' + (result.error || 'Failed to delete mail image'));
         }
     })
     .catch(error => {
