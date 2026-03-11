@@ -83,7 +83,7 @@ class ValiantLandSync:
         self.uploads_path = os.path.join(self.static_path, 'uploads')
         self.photos_path = os.path.join(self.uploads_path, 'photos')
         self.documents_path = os.path.join(self.uploads_path, 'documents')
-        self.sync_batch_size = 5000
+        self.sync_batch_size = int(config.get('sync_batch_size', 250))
         
     def get_local_connection(self):
         return psycopg2.connect(**self.local_config)
@@ -214,40 +214,79 @@ class ValiantLandSync:
             cursor.close()
             conn.close()
     
-    def sync_database(self, direction: str = 'bidirectional') -> dict:
+    def sync_database(self, direction: str = 'from_cloud') -> dict:
+        """
+        Safer session-oriented sync:
+        - start of session: from_cloud
+        - end of session: to_cloud
+        - bidirectional is allowed, but pull happens first, then push
+        """
         stats = {
             'properties_pushed': 0,
             'properties_pulled': 0,
             'owners_pushed': 0,
             'owners_pulled': 0,
-            'links_pushed': 0, 
-            'links_pulled': 0, 
-            'photos_pulled': 0,  # FIX: Track photos pulled from cloud
-            'documents_pulled': 0,  # FIX: Track documents pulled from cloud
+            'links_pushed': 0,
+            'links_pulled': 0,
+            'photos_pulled': 0,
+            'documents_pulled': 0,
+            'files_uploaded': 0,
+            'files_downloaded': 0,
             'conflicts': [],
             'errors': []
         }
-        
-        try:
-            if direction in ['to_cloud', 'bidirectional']:
-                ref_stats = self.sync_reference_tables()
-                logger.debug(f"Reference tables synced: {ref_stats}")
 
-            if direction in ['to_cloud', 'bidirectional']:
-                push_stats = self._push_to_cloud()
-                stats.update(push_stats)
-            
-            if direction in ['from_cloud', 'bidirectional']:
+        try:
+            ref_stats = self.sync_reference_tables()
+            logger.debug(f"Reference tables synced: {ref_stats}")
+            stats.update(ref_stats)
+
+            if direction == 'from_cloud':
                 pull_stats = self._pull_from_cloud()
                 stats.update(pull_stats)
-                
+
+                file_stats = self.sync_files('from_cloud')
+                stats['files_downloaded'] = file_stats.get('downloaded', 0)
+                if file_stats.get('failed'):
+                    stats['errors'].extend(file_stats['failed'])
+
+            elif direction == 'to_cloud':
+                push_stats = self._push_to_cloud()
+                stats.update(push_stats)
+
+                file_stats = self.sync_files('to_cloud')
+                stats['files_uploaded'] = file_stats.get('uploaded', 0)
+                if file_stats.get('failed'):
+                    stats['errors'].extend(file_stats['failed'])
+
+            elif direction == 'bidirectional':
+                # Safer order than before: pull first, then push
+                pull_stats = self._pull_from_cloud()
+                stats.update(pull_stats)
+
+                file_pull_stats = self.sync_files('from_cloud')
+                stats['files_downloaded'] = file_pull_stats.get('downloaded', 0)
+                if file_pull_stats.get('failed'):
+                    stats['errors'].extend(file_pull_stats['failed'])
+
+                push_stats = self._push_to_cloud()
+                stats.update(push_stats)
+
+                file_push_stats = self.sync_files('to_cloud')
+                stats['files_uploaded'] = file_push_stats.get('uploaded', 0)
+                if file_push_stats.get('failed'):
+                    stats['errors'].extend(file_push_stats['failed'])
+
+            else:
+                raise ValueError(f"Unknown sync direction: {direction}")
+
         except Exception as e:
             import traceback
             error_msg = str(e)
             logger.debug("SYNC ERROR: %s", error_msg)
             logger.debug(traceback.format_exc())
             stats['errors'].append(error_msg)
-            
+
         return stats
     
     def _sync_single_owner(self, or_id: int, cursor) -> bool:
@@ -278,6 +317,8 @@ class ValiantLandSync:
                     owner_dict[required] = full_dict[required]
             
             owner_dict = prepare_record_for_supabase(owner_dict)
+            owner_dict['sync_status'] = 'synced'
+            owner_dict['last_sync_at'] = datetime.now().isoformat()
             owner_dict['sync_source'] = 'local'
             
             response = self.supabase.table('owners').upsert(owner_dict).execute()
@@ -341,6 +382,8 @@ class ValiantLandSync:
                         owner_dict[required] = full_dict[required]
                 
                 owner_dict = prepare_record_for_supabase(owner_dict)
+                owner_dict['sync_status'] = 'synced'
+                owner_dict['last_sync_at'] = datetime.now().isoformat()
                 owner_dict['sync_source'] = 'local'
                 
                 try:
@@ -440,6 +483,8 @@ class ValiantLandSync:
                         prop_dict[required] = full_dict[required]
                 
                 prop_dict = prepare_record_for_supabase(prop_dict)
+                prop_dict['sync_status'] = 'synced'
+                prop_dict['last_sync_at'] = datetime.now().isoformat()
                 prop_dict['sync_source'] = 'local'
                 
                 try:
@@ -485,12 +530,7 @@ class ValiantLandSync:
                     continue
             
             conn.commit()
-            
-            # FIX: Sync property photos and documents to cloud (push the table records)
-            if pending_props:
-                p_ids = [p['p_id'] for p in pending_props]
-                self._sync_property_files_to_cloud(cursor, p_ids)
-            
+          
             # Sync property links for synced properties
             if pending_props:
                 p_ids = [p['p_id'] for p in pending_props]
@@ -657,7 +697,6 @@ class ValiantLandSync:
                     for deletion in cloud_deletions.data:
                         record_id = deletion['record_id']
 
-                        # Capture file_path before deleting DB rows
                         file_path = None
                         if table_name in ('property_photos', 'property_documents'):
                             file_path = self._get_record_file_path(cursor, table_name, record_id)
@@ -665,11 +704,16 @@ class ValiantLandSync:
                         cursor.execute(f"DELETE FROM {table_name} WHERE {id_column} = %s", (record_id,))
 
                         if table_name == 'properties':
-                            cursor.execute("DELETE FROM file_sync WHERE local_path LIKE %s", (f"%/p_{record_id}/%",))
+                            cursor.execute("DELETE FROM file_sync WHERE replace(local_path, '\\\\', '/') LIKE %s", (f"%/p_{record_id}/%",))
 
                         elif table_name in ('property_photos', 'property_documents') and file_path:
-                            cursor.execute("DELETE FROM file_sync WHERE local_path = %s OR cloud_path = %s", (file_path, deletion.get('cloud_path')))
-                            self._delete_local_file_and_prune(file_path)
+                            normalized_path = file_path.replace('\\', '/')
+                            cursor.execute("""
+                                DELETE FROM file_sync
+                                WHERE replace(local_path, '\\\\', '/') = %s
+                                   OR replace(coalesce(cloud_path, ''), '\\\\', '/') = %s
+                            """, (normalized_path, deletion.get('cloud_path', '').replace('\\', '/')))
+                            self._delete_local_file_and_prune(normalized_path)
 
                     if cloud_deletions.data:
                         logger.debug(f"Applied {len(cloud_deletions.data)} {table_name} deletions from cloud")
@@ -700,68 +744,70 @@ class ValiantLandSync:
             for cloud_owner in cloud_owners.data:
                 local_id = cloud_owner.get('or_id')
                 
-                # DETERMINE winner FIRST, before any database operations
-                winner = 'cloud'  # Default to cloud unless local is pending and newer
-                
                 cursor.execute("""
                     SELECT modified_at, sync_status FROM owners WHERE or_id = %s
                 """, (local_id,))
                 local_record = cursor.fetchone()
 
+                cloud_modified = cloud_owner.get('modified_at')
+                if cloud_modified is None:
+                    continue
+                if isinstance(cloud_modified, str):
+                    cloud_modified = datetime.fromisoformat(cloud_modified.replace('Z', '+00:00'))
+                
                 if local_record and local_record['sync_status'] == 'pending':
-                    if cloud_owner['modified_at'] > local_record['modified_at']:
-                        winner = 'cloud'
+                    if cloud_modified > local_record['modified_at']:
+                        stats['conflicts'].append({
+                            'table': 'owners',
+                            'id': local_id,
+                            'resolution': 'manual_review_required',
+                            'reason': 'local_pending_and_cloud_newer'
+                        })
+                        logger.debug(f"Conflict detected for owner {local_id}; skipping automatic overwrite")
+                        continue
                     else:
-                        winner = 'local'
-                        continue  # Skip this record, local wins
+                        continue  # local wins, skip cloud overwrite
 
-                if winner == 'cloud':
-                    stats['conflicts'].append({
-                        'table': 'owners',
-                        'id': local_id,
-                        'resolution': 'cloud_wins'
-                    })
+                # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
+                owner_data = {}
+                for col in allowed_owner_columns:
+                    if col in cloud_owner:
+                        owner_data[col] = cloud_owner[col]
+                
+                # Ensure required fields exist
+                if 'or_id' not in owner_data or owner_data['or_id'] is None:
+                    continue  # Skip invalid records
+                
+                # Build SQL with EXPLICIT column list - NO dynamic filtering
+                columns = list(owner_data.keys())
+                placeholders = ', '.join(['%s'] * len(columns))
+                columns_str = ', '.join(columns)
+                
+                # Build updates for non-PK columns only - EXPLICITLY exclude sync metadata
+                update_parts = []
+                for col in columns:
+                    if col != 'or_id':
+                        update_parts.append(f"{col} = EXCLUDED.{col}")
+                
+                # Add sync metadata updates - ONLY HERE, never from cloud data
+                update_parts.extend([
+                    "sync_status = 'synced'",
+                    "last_sync_at = NOW()",
+                    "sync_source = 'cloud'"
+                ])
+                
+                updates_str = ', '.join(update_parts)
+                
+                values = [owner_data[col] for col in columns]
 
-                    # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
-                    owner_data = {}
-                    for col in allowed_owner_columns:
-                        if col in cloud_owner:
-                            owner_data[col] = cloud_owner[col]
-                    
-                    # Ensure required fields exist
-                    if 'or_id' not in owner_data or owner_data['or_id'] is None:
-                        continue  # Skip invalid records
-                    
-                    # Build SQL with EXPLICIT column list - NO dynamic filtering
-                    columns = list(owner_data.keys())
-                    placeholders = ', '.join(['%s'] * len(columns))
-                    columns_str = ', '.join(columns)
-                    
-                    # Build updates for non-PK columns only - EXPLICITLY exclude sync metadata
-                    update_parts = []
-                    for col in columns:
-                        if col != 'or_id':
-                            update_parts.append(f"{col} = EXCLUDED.{col}")
-                    
-                    # Add sync metadata updates - ONLY HERE, never from cloud data
-                    update_parts.extend([
-                        "sync_status = 'synced'",
-                        "last_sync_at = NOW()",
-                        "sync_source = 'cloud'"
-                    ])
-                    
-                    updates_str = ', '.join(update_parts)
-                    
-                    values = [owner_data[col] for col in columns]
+                cursor.execute(f"""
+                    INSERT INTO owners ({columns_str}, sync_status, last_sync_at, sync_source)
+                    VALUES ({placeholders}, 'synced', NOW(), 'cloud')
+                    ON CONFLICT (or_id) DO UPDATE SET
+                    {updates_str}
+                """, tuple(values))
 
-                    cursor.execute(f"""
-                        INSERT INTO owners ({columns_str}, sync_status, last_sync_at, sync_source)
-                        VALUES ({placeholders}, 'synced', NOW(), 'cloud')
-                        ON CONFLICT (or_id) DO UPDATE SET
-                        {updates_str}
-                    """, tuple(values))
-
-                    stats['owners_pulled'] += 1
+                stats['owners_pulled'] += 1
 
             # PHASE 2: Pull properties from cloud
             cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
@@ -800,65 +846,67 @@ class ValiantLandSync:
             for cloud_prop in cloud_props.data:
                 local_id = cloud_prop.get('p_id')
                 
-                # DETERMINE winner FIRST
-                winner = 'cloud'  # Default
-                
                 cursor.execute("""
                     SELECT modified_at, sync_status FROM properties WHERE p_id = %s
                 """, (local_id,))
                 local_record = cursor.fetchone()
 
+                cloud_modified = cloud_prop.get('modified_at')
+                if cloud_modified is None:
+                    continue
+                if isinstance(cloud_modified, str):
+                    cloud_modified = datetime.fromisoformat(cloud_modified.replace('Z', '+00:00'))
+                
                 if local_record and local_record['sync_status'] == 'pending':
-                    if cloud_prop['modified_at'] > local_record['modified_at']:
-                        winner = 'cloud'
-                    else:
-                        winner = 'local'
-                        continue  # Skip, local wins
-
-                if winner == 'cloud':
-                    stats['conflicts'].append({
-                        'table': 'properties',
-                        'id': local_id,
-                        'resolution': 'cloud_wins'
-                    })
-
-                    # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
-                    prop_data = {}
-                    for col in allowed_property_columns:
-                        if col in cloud_prop:
-                            prop_data[col] = cloud_prop[col]
-                    
-                    if 'p_id' not in prop_data or prop_data['p_id'] is None:
+                    if cloud_modified > local_record['modified_at']:
+                        stats['conflicts'].append({
+                            'table': 'properties',
+                            'id': local_id,
+                            'resolution': 'manual_review_required',
+                            'reason': 'local_pending_and_cloud_newer'
+                        })
+                        logger.debug(f"Conflict detected for property {local_id}; skipping automatic overwrite")
                         continue
-                    
-                    columns = list(prop_data.keys())
-                    placeholders = ', '.join(['%s'] * len(columns))
-                    columns_str = ', '.join(columns)
-                    
-                    update_parts = []
-                    for col in columns:
-                        if col != 'p_id':
-                            update_parts.append(f"{col} = EXCLUDED.{col}")
-                    
-                    # Add sync metadata updates - ONLY HERE, never from cloud data
-                    update_parts.extend([
-                        "sync_status = 'synced'",
-                        "last_sync_at = NOW()",
-                        "sync_source = 'cloud'"
-                    ])
-                    
-                    updates_str = ', '.join(update_parts)
-                    
-                    values = [prop_data[col] for col in columns]
+                    else:
+                        continue  # local wins, skip cloud overwrite
 
-                    cursor.execute(f"""
-                        INSERT INTO properties ({columns_str}, sync_status, last_sync_at, sync_source)
-                        VALUES ({placeholders}, 'synced', NOW(), 'cloud')
-                        ON CONFLICT (p_id) DO UPDATE SET
-                        {updates_str}
-                    """, tuple(values))
+                # EXPLICITLY extract only allowed columns - GUARANTEED no sync_status
+                prop_data = {}
+                for col in allowed_property_columns:
+                    if col in cloud_prop:
+                        prop_data[col] = cloud_prop[col]
+                
+                if 'p_id' not in prop_data or prop_data['p_id'] is None:
+                    continue
+                
+                columns = list(prop_data.keys())
+                placeholders = ', '.join(['%s'] * len(columns))
+                columns_str = ', '.join(columns)
+                
+                update_parts = []
+                for col in columns:
+                    if col != 'p_id':
+                        update_parts.append(f"{col} = EXCLUDED.{col}")
+                
+                # Add sync metadata updates - ONLY HERE, never from cloud data
+                update_parts.extend([
+                    "sync_status = 'synced'",
+                    "last_sync_at = NOW()",
+                    "sync_source = 'cloud'"
+                ])
+                
+                updates_str = ', '.join(update_parts)
+                
+                values = [prop_data[col] for col in columns]
 
-                    stats['properties_pulled'] += 1
+                cursor.execute(f"""
+                    INSERT INTO properties ({columns_str}, sync_status, last_sync_at, sync_source)
+                    VALUES ({placeholders}, 'synced', NOW(), 'cloud')
+                    ON CONFLICT (p_id) DO UPDATE SET
+                    {updates_str}
+                """, tuple(values))
+
+                stats['properties_pulled'] += 1
 
             # PHASE 3: Pull property links from cloud
             try:
@@ -1582,8 +1630,7 @@ class ValiantLandSync:
                     logger.debug(f"  ERROR: {error_msg}")
                     continue  # Don't rollback, just continue to next file
                     
-            # After downloading all files, reconcile any missing photo records
-            self._reconcile_downloaded_files(cursor, conn)
+            logger.debug("Skipping _reconcile_downloaded_files during normal sync")
                     
         except Exception as e:
             logger.debug(f"Error accessing cloud file list: {e}")
@@ -1687,6 +1734,12 @@ class ValiantLandSync:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
+
+    def sync_start_session(self) -> dict:
+        return self.sync_database('from_cloud')
+
+    def sync_end_session(self) -> dict:
+        return self.sync_database('to_cloud')
     
     def get_sync_status(self) -> dict:
         """Get current sync status summary"""
