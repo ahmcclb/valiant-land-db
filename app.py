@@ -1856,29 +1856,78 @@ def upload_mail_image(p_id):
 
 @app.route('/api/properties/<int:p_id>/mail-images', methods=['DELETE'])
 def delete_mail_image(p_id):
-    """Delete a mail image from a specific slot."""
+    """Delete a mail image from a specific slot, shift slot 2 into slot 1 if needed,
+    remove local file + file_sync entry, and mark property modified for sync."""
     data = request.json
     slot = data.get('slot')
-    
+
     if slot not in [1, 2]:
         return jsonify({'error': 'Invalid slot'}), 400
-    
+
     conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    column = f'p_mail_image_{slot}'
-    cursor.execute(f'SELECT {column} FROM properties WHERE p_id = %s', (p_id,))
-    result = cursor.fetchone()
-    
-    if result and result[0]:
-        file_path = os.path.join(STATIC_PATH, result[0])
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        cursor.execute(f'UPDATE properties SET {column} = NULL WHERE p_id = %s', (p_id,))
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cursor.execute("""
+            SELECT p_mail_image_1, p_mail_image_2
+            FROM properties
+            WHERE p_id = %s
+        """, (p_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Property not found'}), 404
+
+        current_1 = row['p_mail_image_1']
+        current_2 = row['p_mail_image_2']
+
+        deleted_relative_path = None
+
+        if slot == 1:
+            deleted_relative_path = current_1
+            # Shift slot 2 up into slot 1 if it exists
+            cursor.execute("""
+                UPDATE properties
+                SET p_mail_image_1 = %s,
+                    p_mail_image_2 = NULL,
+                    modified_at = NOW(),
+                    sync_status = 'pending'
+                WHERE p_id = %s
+            """, (current_2, p_id))
+
+        elif slot == 2:
+            deleted_relative_path = current_2
+            cursor.execute("""
+                UPDATE properties
+                SET p_mail_image_2 = NULL,
+                    modified_at = NOW(),
+                    sync_status = 'pending'
+                WHERE p_id = %s
+            """, (p_id,))
+
+        if deleted_relative_path:
+            full_path = os.path.join(STATIC_PATH, deleted_relative_path)
+
+            # Remove local file if present
+            if os.path.exists(full_path):
+                os.remove(full_path)
+
+            # Remove sync tracking for this file
+            cursor.execute("""
+                DELETE FROM file_sync
+                WHERE local_path = %s
+            """, (deleted_relative_path.replace('\\', '/'),))
+
         conn.commit()
-    
-    conn.close()
-    return jsonify({'success': True})
+        return jsonify({'success': True})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        conn.close()
 
 @app.route('/static/<path:filename>', endpoint='static')
 def serve_static(filename):
