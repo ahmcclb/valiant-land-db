@@ -875,11 +875,11 @@ function renderMailImages() {
             `;
         }
         
-        div.innerHTML = `
-            <a href="${url}" target="_blank">${img.name}</a>
-            ${controls}
-            <button class="btn-delete-item" onclick="deleteMailImage(${index})" style="margin-left: auto;">×</button>
-        `;
+		div.innerHTML = `
+			<a href="${url}" target="_blank">${img.name}</a>
+			${controls}
+			<button type="button" class="btn-delete-mail-image" onclick="deleteMailImage(${index}, event)" style="margin-left: auto;">×</button>
+		`;
         container.appendChild(div);
     });
 }
@@ -896,7 +896,12 @@ function swapMailImages(selectedIndex) {
     }
 }
 
-function deleteMailImage(index) {
+function deleteMailImage(index, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
     if (!confirm('Delete this mail image?')) return;
     
     const img = mailImages[index];
