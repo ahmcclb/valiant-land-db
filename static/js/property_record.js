@@ -103,6 +103,97 @@ function parseCurrency(value) {
     return isNaN(num) ? null : num;
 }
 
+function captureUnsavedFormState() {
+    const state = {
+        hasUnsavedChanges,
+        selectedTags: JSON.parse(JSON.stringify(selectedTags || [])),
+        mailImages: JSON.parse(JSON.stringify(mailImages || [])),
+        fields: {}
+    };
+
+    document.querySelectorAll('#property-form input, #property-form select, #property-form textarea').forEach(el => {
+        if (!el.id) return;
+
+        if (el.type === 'checkbox') {
+            state.fields[el.id] = el.checked;
+        } else if (el.type === 'radio') {
+            if (el.checked) state.fields[el.name] = el.value;
+        } else {
+            state.fields[el.id] = el.value;
+        }
+    });
+
+    return state;
+}
+
+function restoreUnsavedFormState(state) {
+    if (!state) return;
+
+    Object.entries(state.fields || {}).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        if (el.type === 'checkbox') {
+            el.checked = !!value;
+        } else {
+            el.value = value;
+        }
+    });
+
+    if (Array.isArray(state.selectedTags)) {
+        selectedTags = JSON.parse(JSON.stringify(state.selectedTags));
+        renderSelectedTags();
+    }
+
+    if (Array.isArray(state.mailImages)) {
+        mailImages = JSON.parse(JSON.stringify(state.mailImages));
+        renderMailImages();
+    }
+
+    if (document.getElementById('o_type')) {
+        toggleOwnerType(document.getElementById('o_type').value || 'Individual');
+    }
+
+    const hasAdditionalOwners =
+        document.getElementById('o_2fname')?.value ||
+        document.getElementById('o_2lname')?.value ||
+        document.getElementById('o_3fname')?.value ||
+        document.getElementById('o_3lname')?.value ||
+        document.getElementById('o_4fname')?.value ||
+        document.getElementById('o_4lname')?.value ||
+        document.getElementById('o_5fname')?.value ||
+        document.getElementById('o_5lname')?.value;
+
+    document.getElementById('additional-owners').style.display = hasAdditionalOwners ? 'block' : 'none';
+
+    const otherOwnersYesBtn = document.querySelector('.other-owners .btn-toggle[data-value="1"]');
+    const otherOwnersNoBtn = document.querySelector('.other-owners .btn-toggle[data-value="0"]');
+    if (otherOwnersYesBtn && otherOwnersNoBtn) {
+        if (hasAdditionalOwners || document.getElementById('o_other_owners')?.value === '1') {
+            otherOwnersYesBtn.classList.add('active');
+            otherOwnersNoBtn.classList.remove('active');
+        } else {
+            otherOwnersNoBtn.classList.add('active');
+            otherOwnersYesBtn.classList.remove('active');
+        }
+    }
+
+    generateComparables();
+    calculateProfit();
+    hasUnsavedChanges = state.hasUnsavedChanges;
+}
+
+async function reloadPropertyDataPreservingUnsavedChanges() {
+    const hadUnsavedChanges = hasUnsavedChanges;
+    const snapshot = hadUnsavedChanges ? captureUnsavedFormState() : null;
+
+    await loadPropertyData();
+
+    if (snapshot) {
+        restoreUnsavedFormState(snapshot);
+    }
+}
+
 // Event Listeners
 function setupEventListeners() {
     // Prevent Enter from submitting
@@ -199,12 +290,13 @@ document.addEventListener('click', (e) => {
             fetch(url, { method: 'DELETE' })
                 .then(response => response.json())
                 .then(result => {
-                    if (result.success) {
-                        loadPropertyData();
-                        showMessage('Deleted successfully', 'success');
-                    } else {
-                        alert('Error: ' + result.error);
-                    }
+					if (result.success) {
+						reloadPropertyDataPreservingUnsavedChanges().then(() => {
+							showMessage('Deleted successfully', 'success');
+						});
+					} else {
+						alert('Error: ' + result.error);
+					}
                 });
         }
     }
@@ -705,11 +797,12 @@ function uploadPhoto(e) {
     })
     .then(response => response.json())
     .then(result => {
-        if (result.success) {
-            loadPropertyData();
-            showMessage('Photo uploaded successfully!', 'success');
-            document.getElementById('photo-upload').value = '';
-        }
+		if (result.success) {
+			reloadPropertyDataPreservingUnsavedChanges().then(() => {
+				showMessage('Photo uploaded successfully!', 'success');
+				document.getElementById('photo-upload').value = '';
+			});
+		}
     });
 }
 
@@ -815,12 +908,11 @@ function deleteMailImage(index) {
     })
     .then(response => response.json())
     .then(result => {
-        if (result.success) {
-            loadPropertyData();
-            showMessage('Mail image deleted', 'success');
-        } else {
-            alert('Error: ' + (result.error || 'Failed to delete mail image'));
-        }
+		if (result.success) {
+			reloadPropertyDataPreservingUnsavedChanges().then(() => {
+				showMessage('Mail image deleted', 'success');
+			});
+		}
     })
     .catch(error => {
         console.error('Delete error:', error);
@@ -846,11 +938,12 @@ function uploadDocument(e) {
     })
     .then(response => response.json())
     .then(result => {
-        if (result.success) {
-            loadPropertyData();
-            showMessage('Document uploaded successfully!', 'success');
-            document.getElementById('doc-upload').value = '';
-        }
+		if (result.success) {
+			reloadPropertyDataPreservingUnsavedChanges().then(() => {
+				showMessage('Document uploaded successfully!', 'success');
+				document.getElementById('doc-upload').value = '';
+			});
+		}
     });
 }
 function addLink() {
@@ -869,12 +962,13 @@ function addLink() {
     })
     .then(response => response.json())
     .then(result => {
-        if (result.success) {
-            document.getElementById('link-url').value = '';
-            document.getElementById('link-desc').value = '';
-            loadPropertyData();
-            showMessage('Link added successfully!', 'success');
-        }
+		if (result.success) {
+			document.getElementById('link-url').value = '';
+			document.getElementById('link-desc').value = '';
+			reloadPropertyDataPreservingUnsavedChanges().then(() => {
+				showMessage('Link added successfully!', 'success');
+			});
+		}
     });
 }
 
