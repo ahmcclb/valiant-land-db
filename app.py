@@ -1765,27 +1765,36 @@ def upload_document(p_id):
 def add_link(p_id):
     """Add a link for a property."""
     data = request.json
-    
+
     url = data.get('url')
     description = data.get('description', '')
-    
+
     if not url:
         return jsonify({'error': 'URL is required'}), 400
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO property_links (p_id, url, description, added_date)
-        VALUES (%s, %s, %s, NOW())
-        RETURNING link_id
-    ''', (p_id, url, description))
-    
-    link_id = cursor.fetchone()[0]
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True, 'link_id': link_id})
+
+    try:
+        cursor.execute('''
+            INSERT INTO property_links (p_id, url, description, added_date, modified_at, sync_status, last_sync_at, sync_version)
+            VALUES (%s, %s, %s, NOW(), NOW(), 'pending', NULL, 1)
+            RETURNING link_id
+        ''', (p_id, url, description))
+
+        link_id = cursor.fetchone()[0]
+
+        # Mark parent property modified so current push path will include its links
+        mark_record_modified('properties', p_id, conn)
+
+        conn.commit()
+        return jsonify({'success': True, 'link_id': link_id})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
     
 # FIX 3: Modify upload_mail_image to track in file_sync (it already saves to disk, needs cloud sync tracking)
 @app.route('/api/properties/<int:p_id>/mail-images', methods=['POST'])

@@ -682,12 +682,14 @@ class ValiantLandSync:
                         
                         if not cloud_check.data:
                             self.supabase.table('property_links').insert(link_record).execute()
-                            (f"Pushed link {link_dict['link_id']} for property {link_dict['p_id']}")
+                            stats['links_pushed'] = stats.get('links_pushed', 0) + 1
+                            logger.debug(f"Pushed link {link_dict['link_id']} for property {link_dict['p_id']}")
                         else:
-                            # Update if changed
                             self.supabase.table('property_links')\
                                 .upsert(link_record)\
                                 .execute()
+                            stats['links_pushed'] = stats.get('links_pushed', 0) + 1
+                            logger.debug(f"Upserted link {link_dict['link_id']} for property {link_dict['p_id']}")
                                 
                     except Exception as link_error:
                         logger.debug(f"Warning: Could not sync link {link.get('link_id')}: {link_error}")
@@ -1022,54 +1024,83 @@ class ValiantLandSync:
 
             # PHASE 3: Pull property links from cloud
             try:
-                cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM property_links")
-                result = cursor.fetchone()
-                links_last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
-
                 cloud_links = self.supabase.table('property_links')\
                     .select('*')\
-                    .gt('modified_at', links_last_sync)\
                     .execute()
 
-                for link in cloud_links.data:
+                for link in cloud_links.data or []:
                     try:
-                        added_date = link.get('added_date')
-                        if isinstance(added_date, str):
-                            pass
-                        elif isinstance(added_date, datetime):
-                            added_date = added_date.isoformat()
-                        else:
-                            added_date = datetime.now().isoformat()
+                        link_id = link.get('link_id')
+                        if not link_id:
+                            continue
 
-                        modified_at = link.get('modified_at')
-                        if isinstance(modified_at, str):
-                            pass
-                        elif isinstance(modified_at, datetime):
-                            modified_at = modified_at.isoformat()
+                        cloud_modified = link.get('modified_at')
+                        if isinstance(cloud_modified, str):
+                            cloud_modified_dt = datetime.fromisoformat(cloud_modified.replace('Z', '+00:00'))
+                            cloud_modified_value = cloud_modified
+                        elif isinstance(cloud_modified, datetime):
+                            cloud_modified_dt = cloud_modified
+                            cloud_modified_value = cloud_modified.isoformat()
                         else:
-                            modified_at = datetime.now().isoformat()
+                            cloud_modified_dt = None
+                            cloud_modified_value = datetime.now().isoformat()
+
+                        added_date = link.get('added_date')
+                        if isinstance(added_date, datetime):
+                            added_date_value = added_date.isoformat()
+                        elif isinstance(added_date, str):
+                            added_date_value = added_date
+                        else:
+                            added_date_value = datetime.now().isoformat()
 
                         cursor.execute("""
-                            INSERT INTO property_links
-                            (link_id, p_id, url, description, added_date, modified_at, sync_status, last_sync_at, sync_version)
-                            VALUES (%s, %s, %s, %s, %s, %s, 'synced', NOW(), 1)
-                            ON CONFLICT (link_id) DO UPDATE SET
-                            p_id = EXCLUDED.p_id,
-                            url = EXCLUDED.url,
-                            description = EXCLUDED.description,
-                            added_date = EXCLUDED.added_date,
-                            modified_at = EXCLUDED.modified_at,
-                            sync_status = 'synced',
-                            last_sync_at = NOW(),
-                            sync_version = EXCLUDED.sync_version
-                        """, (link['link_id'], link['p_id'], link['url'],
-                              link.get('description', ''), added_date, modified_at))
+                            SELECT modified_at, sync_status
+                            FROM property_links
+                            WHERE link_id = %s
+                        """, (link_id,))
+                        local_link = cursor.fetchone()
 
-                        stats['links_pulled'] = stats.get('links_pulled', 0) + 1
+                        if local_link and local_link.get('sync_status') == 'pending':
+                            local_modified = local_link.get('modified_at')
+                            if cloud_modified_dt and local_modified and cloud_modified_dt > local_modified:
+                                logger.debug(f"Conflict detected for link {link_id}; local pending but cloud newer. Skipping automatic overwrite.")
+                            continue
 
-                    except Exception as link_error:
-                        logger.debug(f"Warning: Could not pull link {link.get('link_id')}: {link_error}")
-                        continue
+                        should_upsert = False
+                        if not local_link:
+                            should_upsert = True
+                        else:
+                            local_modified = local_link.get('modified_at')
+                            if cloud_modified_dt and local_modified:
+                                should_upsert = cloud_modified_dt > local_modified
+                            else:
+                                should_upsert = True
+
+                        if should_upsert:
+                            cursor.execute("""
+                                INSERT INTO property_links
+                                (link_id, p_id, url, description, added_date, modified_at, sync_status, last_sync_at, sync_version)
+                                VALUES (%s, %s, %s, %s, %s, %s, 'synced', NOW(), %s)
+                                ON CONFLICT (link_id) DO UPDATE SET
+                                    p_id = EXCLUDED.p_id,
+                                    url = EXCLUDED.url,
+                                    description = EXCLUDED.description,
+                                    added_date = EXCLUDED.added_date,
+                                    modified_at = EXCLUDED.modified_at,
+                                    sync_status = 'synced',
+                                    last_sync_at = NOW(),
+                                    sync_version = EXCLUDED.sync_version
+                            """, (
+                                link_id,
+                                link['p_id'],
+                                link['url'],
+                                link.get('description', ''),
+                                added_date_value,
+                                cloud_modified_value,
+                                link.get('sync_version', 1)
+                            ))
+
+                            stats['links_pulled'] = stats.get('links_pulled', 0) + 1
 
                 logger.debug(f"Pulled {stats.get('links_pulled', 0)} new/changed links from cloud")
 
