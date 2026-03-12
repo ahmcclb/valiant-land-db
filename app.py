@@ -81,35 +81,36 @@ def api_sync():
     """Execute sync with cloud"""
     from sync_service import ValiantLandSync
     import os
-    
-    data = request.json
-    direction = data.get('direction', 'bidirectional')
-    
-    # Config from environment variables or config file
+
+    data = request.get_json(silent=True) or {}
+    direction = data.get('direction', 'from_cloud')
+
+    if direction not in ('from_cloud', 'to_cloud', 'bidirectional'):
+        return jsonify({
+            'success': False,
+            'error': f'Invalid sync direction: {direction}'
+        }), 400
+
     supabase_url = os.getenv('SUPABASE_URL', 'https://gkgiuokglsgsywctpohe.supabase.co')
     supabase_key = os.getenv('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrZ2l1b2tnbHNnc3l3Y3Rwb2hlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTI3NDQ0MywiZXhwIjoyMDg2ODUwNDQzfQ.UY67-jQ2Xzrh0EWxtH6Jx5_Ff2ygqBgAXIVay9XVfsw')
-    
+
     local_config = {
         'host': 'localhost',
         'database': 'valiant_land',
         'user': 'vl_user',
         'password': 'ifoLdouTEAThleCt'
     }
-    
+
     try:
         sync = ValiantLandSync(local_config, supabase_url, supabase_key)
         stats = sync.sync_database(direction)
-        
-        # Also sync files if requested
-        if data.get('include_files', True):
-            file_stats = sync.sync_files(direction)  # Pass the direction!
-            stats.update(file_stats)
-        
+
         return jsonify({
             'success': True,
+            'direction': direction,
             **stats
         })
-        
+
     except Exception as e:
         return jsonify({
             'success': False,

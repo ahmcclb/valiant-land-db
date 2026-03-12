@@ -1,5 +1,6 @@
 import psycopg2
 import psycopg2.extras
+from psycopg2 import sql
 from supabase import create_client, Client
 import hashlib
 import os
@@ -87,6 +88,125 @@ class ValiantLandSync:
         
     def get_local_connection(self):
         return psycopg2.connect(**self.local_config)
+
+    def _parse_sync_dt(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except Exception:
+                return None
+        return None
+
+    def _normalize_reference_row(self, row: dict) -> dict:
+        normalized = {}
+        for key, value in dict(row).items():
+            if isinstance(value, datetime):
+                normalized[key] = value.isoformat()
+            else:
+                normalized[key] = value
+        return normalized
+
+    def _reference_rows_differ(self, left: dict, right: dict) -> bool:
+        return self._normalize_reference_row(left) != self._normalize_reference_row(right)
+
+    def _upsert_local_row(self, cursor, table_name: str, pk_field: str, row: dict):
+        row = dict(row)
+        columns = list(row.keys())
+
+        insert_sql = sql.SQL("""
+            INSERT INTO {table} ({columns})
+            VALUES ({values})
+            ON CONFLICT ({pk}) DO UPDATE
+            SET {updates}
+        """).format(
+            table=sql.Identifier(table_name),
+            columns=sql.SQL(', ').join(sql.Identifier(col) for col in columns),
+            values=sql.SQL(', ').join(sql.Placeholder() for _ in columns),
+            pk=sql.Identifier(pk_field),
+            updates=sql.SQL(', ').join(
+                sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(col), sql.Identifier(col))
+                for col in columns if col != pk_field
+            )
+        )
+
+        cursor.execute(insert_sql, [row[col] for col in columns])
+
+    def _sync_reference_rows(self, cursor, table_name: str, cloud_table: str, pk_field: str,
+                             direction: str, local_where: str = None,
+                             cloud_filter: dict = None) -> int:
+        local_sql = f"SELECT * FROM {table_name}"
+        if local_where:
+            local_sql += f" WHERE {local_where}"
+        cursor.execute(local_sql)
+        local_rows = {row[pk_field]: dict(row) for row in cursor.fetchall()}
+
+        query = self.supabase.table(cloud_table).select('*')
+        if cloud_filter:
+            for field, value in cloud_filter.items():
+                query = query.eq(field, value)
+        response = query.execute()
+        cloud_rows = {row[pk_field]: dict(row) for row in (response.data or [])}
+
+        synced_count = 0
+        all_ids = sorted(set(local_rows.keys()) | set(cloud_rows.keys()))
+
+        for row_id in all_ids:
+            local_row = local_rows.get(row_id)
+            cloud_row = cloud_rows.get(row_id)
+
+            if local_row and not cloud_row:
+                if direction in ('to_cloud', 'bidirectional'):
+                    self.supabase.table(cloud_table).upsert(
+                        prepare_record_for_supabase(local_row)
+                    ).execute()
+                    synced_count += 1
+                continue
+
+            if cloud_row and not local_row:
+                if direction in ('from_cloud', 'bidirectional'):
+                    self._upsert_local_row(cursor, table_name, pk_field, cloud_row)
+                    synced_count += 1
+                continue
+
+            if local_row and cloud_row and self._reference_rows_differ(local_row, cloud_row):
+                if direction == 'to_cloud':
+                    self.supabase.table(cloud_table).upsert(
+                        prepare_record_for_supabase(local_row)
+                    ).execute()
+                    synced_count += 1
+                    continue
+
+                if direction == 'from_cloud':
+                    self._upsert_local_row(cursor, table_name, pk_field, cloud_row)
+                    synced_count += 1
+                    continue
+
+                local_dt = self._parse_sync_dt(local_row.get('modified_at'))
+                cloud_dt = self._parse_sync_dt(cloud_row.get('modified_at'))
+
+                if local_dt and cloud_dt:
+                    if local_dt > cloud_dt:
+                        self.supabase.table(cloud_table).upsert(
+                            prepare_record_for_supabase(local_row)
+                        ).execute()
+                        synced_count += 1
+                    elif cloud_dt > local_dt:
+                        self._upsert_local_row(cursor, table_name, pk_field, cloud_row)
+                        synced_count += 1
+                elif local_dt and not cloud_dt:
+                    self.supabase.table(cloud_table).upsert(
+                        prepare_record_for_supabase(local_row)
+                    ).execute()
+                    synced_count += 1
+                elif cloud_dt and not local_dt:
+                    self._upsert_local_row(cursor, table_name, pk_field, cloud_row)
+                    synced_count += 1
+
+        return synced_count
         
     def _get_cloud_mail_image_paths(self, p_id: int) -> set:
         """Return known mail-image paths/filenames for a property from Supabase properties."""
@@ -150,66 +270,58 @@ class ValiantLandSync:
             logger.debug(f"Warning: Could not fetch file_path for {table_name} {record_id}: {e}")
             return None
     
-    def sync_reference_tables(self) -> dict:
-        """Sync small reference tables (statuses, tags) that properties depend on"""
-        stats = {'statuses_synced': 0, 'tags_synced': 0, 'companies_synced': 0, 'templates_synced': 0}
-        
+    def sync_reference_tables(self, direction: str = 'bidirectional') -> dict:
+        """Sync reference tables only when rows are missing or changed."""
+        stats = {
+            'statuses_synced': 0,
+            'tags_synced': 0,
+            'companies_synced': 0,
+            'templates_synced': 0
+        }
+
         conn = self.get_local_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
+
         try:
-            cursor.execute("SELECT * FROM statuses")
-            statuses = cursor.fetchall()
-            
-            for status in statuses:
-                status_dict = dict(status)
-                status_dict = prepare_record_for_supabase(status_dict)
-                try:
-                    self.supabase.table('statuses').upsert(status_dict).execute()
-                    stats['statuses_synced'] += 1
-                except Exception as e:
-                    logger.debug(f"Error syncing status {status.get('status_id')}: {e}")
-            
-            cursor.execute("SELECT * FROM tags")
-            tags = cursor.fetchall()
-            
-            for tag in tags:
-                tag_dict = dict(tag)
-                tag_dict = prepare_record_for_supabase(tag_dict)
-                try:
-                    self.supabase.table('tags').upsert(tag_dict).execute()
-                    stats['tags_synced'] += 1
-                except Exception as e:
-                    logger.debug(f"Error syncing tag {tag.get('tag_id')}: {e}")
-                    
-            # Sync companies (single record - company profile)
-            cursor.execute("SELECT * FROM companies WHERE c_id = 1")
-            company = cursor.fetchone()
-            
-            if company:
-                company_dict = dict(company)
-                company_dict = prepare_record_for_supabase(company_dict)
-                try:
-                    self.supabase.table('companies').upsert(company_dict).execute()
-                    stats['companies_synced'] = 1
-                except Exception as e:
-                    logger.debug(f"Error syncing company record: {e}")        
-            
-            # Sync document templates
-            cursor.execute("SELECT * FROM document_templates WHERE is_active = TRUE")
-            templates = cursor.fetchall()
-            
-            for template in templates:
-                template_dict = dict(template)
-                template_dict = prepare_record_for_supabase(template_dict)
-                try:
-                    self.supabase.table('document_templates').upsert(template_dict).execute()
-                    stats['templates_synced'] = stats.get('templates_synced', 0) + 1
-                except Exception as e:
-                    logger.debug(f"Error syncing template {template.get('template_id')}: {e}")
-            
+            stats['statuses_synced'] = self._sync_reference_rows(
+                cursor=cursor,
+                table_name='statuses',
+                cloud_table='statuses',
+                pk_field='status_id',
+                direction=direction
+            )
+
+            stats['tags_synced'] = self._sync_reference_rows(
+                cursor=cursor,
+                table_name='tags',
+                cloud_table='tags',
+                pk_field='tag_id',
+                direction=direction
+            )
+
+            stats['companies_synced'] = self._sync_reference_rows(
+                cursor=cursor,
+                table_name='companies',
+                cloud_table='companies',
+                pk_field='c_id',
+                direction=direction,
+                local_where='c_id = 1',
+                cloud_filter={'c_id': 1}
+            )
+
+            stats['templates_synced'] = self._sync_reference_rows(
+                cursor=cursor,
+                table_name='document_templates',
+                cloud_table='document_templates',
+                pk_field='template_id',
+                direction=direction,
+                local_where='is_active = TRUE',
+                cloud_filter={'is_active': True}
+            )
+
+            conn.commit()
             return stats
-            
+
         finally:
             cursor.close()
             conn.close()
@@ -237,7 +349,7 @@ class ValiantLandSync:
         }
 
         try:
-            ref_stats = self.sync_reference_tables()
+            ref_stats = self.sync_reference_tables(direction)       
             logger.debug(f"Reference tables synced: {ref_stats}")
             stats.update(ref_stats)
 
