@@ -1575,110 +1575,97 @@ async function loadSearchResults() {
     }
 }
 
-async function performSync() {
+async function performSync(direction = 'from_cloud') {
     openPopup('sync-modal');
     const progressBar = document.getElementById('sync-progress-bar');
     const statusText = document.getElementById('sync-status-text');
     const results = document.getElementById('sync-results');
-    
-    // Start timer
+
     const startTime = Date.now();
-    
-    // Helper function to format elapsed time
+
     const getElapsedTime = () => {
         const elapsed = Date.now() - startTime;
         const seconds = Math.floor(elapsed / 1000);
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = seconds % 60;
-        
+
         if (minutes > 0) {
             return `${minutes}m ${remainingSeconds}s`;
         } else {
             return `${seconds}s`;
         }
     };
-    
-    // Reset display
+
+    const directionLabels = {
+        from_cloud: 'Pulling latest changes from cloud...',
+        to_cloud: 'Pushing local changes to cloud...',
+        bidirectional: 'Running full bidirectional sync...'
+    };
+
     results.style.display = 'none';
     results.innerHTML = '';
-    
+
     try {
-        statusText.textContent = 'Syncing data to cloud...';
+        statusText.textContent = directionLabels[direction] || 'Syncing...';
         progressBar.style.width = '50%';
-        
+
         const response = await fetch('/api/sync', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({direction: 'bidirectional'})
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ direction })
         });
-        
+
         progressBar.style.width = '100%';
-        
+
         if (response.ok) {
             const data = await response.json();
-            
+
             let html = '<h4 style="margin-top: 0; color: #28a745;">Sync Complete</h4>';
+            html += `<p><strong>Direction:</strong> ${data.direction || direction}</p>`;
             html += `<p>✓ Properties pushed: ${data.properties_pushed || 0}</p>`;
             html += `<p>✓ Properties pulled: ${data.properties_pulled || 0}</p>`;
             html += `<p>✓ Owners pushed: ${data.owners_pushed || 0}</p>`;
             html += `<p>✓ Owners pulled: ${data.owners_pulled || 0}</p>`;
-			html += `<p>✓ Links pushed: ${data.links_pushed || 0}</p>`;
+            html += `<p>✓ Links pushed: ${data.links_pushed || 0}</p>`;
             html += `<p>✓ Links pulled: ${data.links_pulled || 0}</p>`;
-            html += `<p>✓ Files uploaded: ${data.uploaded || 0}</p>`;
-            html += `<p>✓ Files downloaded: ${data.downloaded || 0}</p>`;
-            html += `<hr style="margin: 10px 0; border: none; border-top: 1px solid #dee2e6;">`;
-            html += `<p style="font-size: 0.9em; color: #6c757d; margin-bottom: 5px;"><strong>Reference Tables:</strong></p>`;
-            html += `<p style="font-size: 0.9em; margin-left: 10px;">• Statuses synced: ${data.statuses_synced || 0}</p>`;
-            html += `<p style="font-size: 0.9em; margin-left: 10px;">• Tags synced: ${data.tags_synced || 0}</p>`;
-            html += `<p style="font-size: 0.9em; margin-left: 10px;">• Companies synced: ${data.companies_synced || 0}</p>`;
-            html += `<p style="font-size: 0.9em; margin-left: 10px;">• Templates synced: ${data.templates_synced || 0}</p>`;
-            
-            if (data.conflicts && data.conflicts.length > 0) {
-                html += `<p style="color: #ffc107;">⚠ Conflicts: ${data.conflicts.length}</p>`;
+            html += `<p>✓ Files uploaded: ${data.files_uploaded || 0}</p>`;
+            html += `<p>✓ Files downloaded: ${data.files_downloaded || 0}</p>`;
+
+            if (
+                data.statuses_synced !== undefined ||
+                data.tags_synced !== undefined ||
+                data.companies_synced !== undefined ||
+                data.templates_synced !== undefined
+            ) {
+                html += `<br><p><strong>Reference Tables:</strong></p>`;
+                html += `<p>• Statuses synced: ${data.statuses_synced || 0}</p>`;
+                html += `<p>• Tags synced: ${data.tags_synced || 0}</p>`;
+                html += `<p>• Companies synced: ${data.companies_synced || 0}</p>`;
+                html += `<p>• Templates synced: ${data.templates_synced || 0}</p>`;
             }
-            
+
             if (data.errors && data.errors.length > 0) {
-                html += `<p style="color: #dc3545;">✗ Errors: ${data.errors.length}</p>`;
-                // Show first 3 errors
-                html += '<ul style="color: #dc3545; font-size: 12px;">';
-                data.errors.slice(0, 3).forEach(err => {
-                    html += `<li>${err}</li>`;
+                html += `<br><p style="color: #dc3545;"><strong>Errors:</strong> ${data.errors.length}</p>`;
+                data.errors.forEach(err => {
+                    html += `<p style="color: #dc3545; margin-left: 10px;">${err}</p>`;
                 });
-                if (data.errors.length > 3) {
-                    html += `<li>...and ${data.errors.length - 3} more</li>`;
-                }
-                html += '</ul>';
             }
-            
-            // Add elapsed time
-            html += `<p style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd; color: #666; font-size: 13px;"><strong>Time elapsed:</strong> ${getElapsedTime()}</p>`;
-            
+
+            html += `<br><p><strong>Time elapsed:</strong> ${getElapsedTime()}</p>`;
+
             results.innerHTML = html;
             results.style.display = 'block';
-            statusText.textContent = 'Sync completed successfully';
-            
-            // Update status indicator
-            updateSyncIndicator(true);
+            statusText.textContent = 'Sync finished';
         } else {
-            const errorData = await response.json();
-            statusText.textContent = 'Sync failed';
-            statusText.style.color = '#dc3545';
-            
-            // Add elapsed time even on failure
-            const elapsed = getElapsedTime();
-            results.innerHTML = `<p style="color: #dc3545;">Error: ${errorData.error || 'Unknown error'}</p><p style="color: #666; font-size: 13px; margin-top: 10px;"><strong>Time elapsed:</strong> ${elapsed}</p>`;
-            results.style.display = 'block';
+            const text = await response.text();
+            throw new Error(text || 'Sync failed');
         }
     } catch (error) {
+        console.error('Sync error:', error);
+        statusText.textContent = 'Sync failed';
         progressBar.style.width = '100%';
-        statusText.textContent = 'Offline - Will retry when connected';
-        statusText.style.color = '#ffc107';
-        
-        // Add elapsed time even on connection error
-        const elapsed = getElapsedTime();
-        results.innerHTML = `<p style="color: #ffc107;">Could not connect to server. Please check your connection.</p><p style="color: #666; font-size: 13px; margin-top: 10px;"><strong>Time elapsed:</strong> ${elapsed}</p>`;
+        results.innerHTML = `<p style="color: #dc3545;">${error.message}</p>`;
         results.style.display = 'block';
-        updateSyncIndicator(false);
     }
 }
 
