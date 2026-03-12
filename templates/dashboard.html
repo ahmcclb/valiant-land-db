@@ -35,8 +35,14 @@
 				<span class="sync-dot" style="width: 8px; height: 8px; background: #28a745; border-radius: 50%;"></span>
 				<span class="sync-text">Synced</span>
 			</span>
-			<button onclick="performSync()" class="btn-sync" style="padding: 4px 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
-				Sync Now
+			<button onclick="performSync('from_cloud')" class="btn-sync" style="padding: 4px 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+				Pull Latest
+			</button>
+			<button onclick="performSync('to_cloud')" class="btn-sync" style="padding: 4px 12px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+				Push My Changes
+			</button>
+			<button onclick="performSync('bidirectional')" class="btn-sync" style="padding: 4px 12px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+				Full Sync
 			</button>
 			<span id="sync-pending-count" style="font-size: 11px; color: #666; display: none;"></span>
 		</div>
