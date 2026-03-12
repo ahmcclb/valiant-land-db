@@ -779,8 +779,30 @@ class ValiantLandSync:
                 id_column = id_columns.get(table, f"{table[:-1]}_id")
 
                 try:
+                    # 1. Delete cloud row itself
                     self.supabase.table(table).delete().eq(id_column, record_id).execute()
-                    cursor.execute('UPDATE sync_deletions SET cloud_deleted = TRUE WHERE deletion_id = %s', (deletion['deletion_id'],))
+
+                    # 2. Write/refresh cloud tombstone so other PCs can pull the deletion
+                    tombstone = {
+                        'table_name': table,
+                        'record_id': record_id,
+                        'deleted_at': deletion['deleted_at'].isoformat() if hasattr(deletion['deleted_at'], 'isoformat') else str(deletion['deleted_at']),
+                        'sync_status': 'synced',
+                        'cloud_deleted': True
+                    }
+                    self.supabase.table('sync_deletions').upsert(
+                        tombstone,
+                        on_conflict='table_name,record_id'
+                    ).execute()
+
+                    # 3. Mark local tombstone synced
+                    cursor.execute("""
+                        UPDATE sync_deletions
+                        SET cloud_deleted = TRUE,
+                            sync_status = 'synced'
+                        WHERE deletion_id = %s
+                    """, (deletion['deletion_id'],))
+
                 except Exception as e:
                     logger.debug(f"Will retry cloud deletion later for {table} {record_id}: {e}")
 
@@ -788,7 +810,7 @@ class ValiantLandSync:
 
             # PHASE 0.5: Pull deletions from cloud and apply locally
             try:
-                cursor.execute("SELECT MAX(last_sync_at) as max_sync FROM properties")
+                cursor.execute("SELECT MAX(deleted_at) as max_sync FROM sync_deletions")
                 result = cursor.fetchone()
                 last_sync = result['max_sync'] if result and result['max_sync'] else '1970-01-01'
 
@@ -828,7 +850,20 @@ class ValiantLandSync:
                                    OR replace(coalesce(cloud_path, ''), '\\\\', '/') = %s
                             """, (normalized_path, deletion.get('cloud_path', '').replace('\\', '/')))
                             self._delete_local_file_and_prune(normalized_path)
-
+                        
+                        cursor.execute("""
+                            INSERT INTO sync_deletions (table_name, record_id, deleted_at, sync_status, cloud_deleted)
+                            VALUES (%s, %s, %s, 'synced', TRUE)
+                            ON CONFLICT (table_name, record_id) DO UPDATE SET
+                                deleted_at = EXCLUDED.deleted_at,
+                                sync_status = 'synced',
+                                cloud_deleted = TRUE
+                        """, (
+                            table_name,
+                            record_id,
+                            deletion['deleted_at']
+                        ))
+                        
                     if cloud_deletions.data:
                         logger.debug(f"Applied {len(cloud_deletions.data)} {table_name} deletions from cloud")
 

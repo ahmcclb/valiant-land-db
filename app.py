@@ -803,8 +803,21 @@ def delete_property(p_id):
         try:
             from sync_service import ValiantLandSync
             sync = ValiantLandSync()
+
             sync.supabase.table('properties').delete().eq('p_id', p_id).execute()
-            cursor.execute('UPDATE sync_deletions SET cloud_deleted = TRUE WHERE table_name = %s AND record_id = %s', ('properties', p_id))
+            sync.supabase.table('sync_deletions').upsert({
+                'table_name': 'properties',
+                'record_id': p_id,
+                'deleted_at': datetime.now().isoformat(),
+                'sync_status': 'synced',
+                'cloud_deleted': True
+            }, on_conflict='table_name,record_id').execute()
+
+            cursor.execute("""
+                UPDATE sync_deletions
+                SET cloud_deleted = TRUE, sync_status = 'synced'
+                WHERE table_name = %s AND record_id = %s
+            """, ('properties', p_id))
         except Exception as cloud_error:
             print(f"Cloud delete queued for later (property {p_id}): {cloud_error}")
         
@@ -2009,13 +2022,40 @@ def delete_photo(p_id, photo_id):
     if row:
         file_path = row['file_path']
         full_path = os.path.join(STATIC_PATH, file_path)
-        
-        # FIX: Delete from file_sync first (cascade delete)
+
+        cursor.execute('''
+            INSERT INTO sync_deletions (table_name, record_id, sync_status)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (table_name, record_id) DO UPDATE SET
+                deleted_at = NOW(), sync_status = 'pending', cloud_deleted = FALSE
+        ''', ('property_photos', photo_id, 'pending'))
+
+        try:
+            from sync_service import ValiantLandSync
+            sync = ValiantLandSync()
+            sync.supabase.table('property_photos').delete().eq('photo_id', photo_id).execute()
+            sync.supabase.table('sync_deletions').upsert({
+                'table_name': 'property_photos',
+                'record_id': photo_id,
+                'deleted_at': datetime.now().isoformat(),
+                'sync_status': 'synced',
+                'cloud_deleted': True
+            }, on_conflict='table_name,record_id').execute()
+
+            cursor.execute("""
+                UPDATE sync_deletions
+                SET cloud_deleted = TRUE, sync_status = 'synced'
+                WHERE table_name = %s AND record_id = %s
+            """, ('property_photos', photo_id))
+        except Exception as cloud_error:
+            print(f"Cloud delete queued for photo {photo_id}: {cloud_error}")
+
+        # Delete from file_sync first
         cursor.execute('DELETE FROM file_sync WHERE local_path = %s', (file_path,))
-        
+
         cursor.execute('DELETE FROM property_photos WHERE photo_id = %s AND p_id = %s', (photo_id, p_id))
         conn.commit()
-        
+
         # Delete file from disk
         if os.path.exists(full_path):
             os.remove(full_path)
@@ -2036,13 +2076,40 @@ def delete_document(p_id, doc_id):
     if row:
         file_path = row['file_path']
         full_path = os.path.join(STATIC_PATH, file_path)
-        
-        # FIX: Delete from file_sync first (cascade delete)
+
+        cursor.execute('''
+            INSERT INTO sync_deletions (table_name, record_id, sync_status)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (table_name, record_id) DO UPDATE SET
+                deleted_at = NOW(), sync_status = 'pending', cloud_deleted = FALSE
+        ''', ('property_documents', doc_id, 'pending'))
+
+        try:
+            from sync_service import ValiantLandSync
+            sync = ValiantLandSync()
+            sync.supabase.table('property_documents').delete().eq('doc_id', doc_id).execute()
+            sync.supabase.table('sync_deletions').upsert({
+                'table_name': 'property_documents',
+                'record_id': doc_id,
+                'deleted_at': datetime.now().isoformat(),
+                'sync_status': 'synced',
+                'cloud_deleted': True
+            }, on_conflict='table_name,record_id').execute()
+
+            cursor.execute("""
+                UPDATE sync_deletions
+                SET cloud_deleted = TRUE, sync_status = 'synced'
+                WHERE table_name = %s AND record_id = %s
+            """, ('property_documents', doc_id))
+        except Exception as cloud_error:
+            print(f"Cloud delete queued for document {doc_id}: {cloud_error}")
+
+        # Delete from file_sync first
         cursor.execute('DELETE FROM file_sync WHERE local_path = %s', (file_path,))
-        
+
         cursor.execute('DELETE FROM property_documents WHERE doc_id = %s AND p_id = %s', (doc_id, p_id))
         conn.commit()
-        
+
         if os.path.exists(full_path):
             os.remove(full_path)
     
@@ -2068,8 +2135,21 @@ def delete_link(p_id, link_id):
         try:
             from sync_service import ValiantLandSync
             sync = ValiantLandSync()
+
             sync.supabase.table('property_links').delete().eq('link_id', link_id).execute()
-            cursor.execute('UPDATE sync_deletions SET cloud_deleted = TRUE WHERE table_name = %s AND record_id = %s', ('property_links', link_id))
+            sync.supabase.table('sync_deletions').upsert({
+                'table_name': 'property_links',
+                'record_id': link_id,
+                'deleted_at': datetime.now().isoformat(),
+                'sync_status': 'synced',
+                'cloud_deleted': True
+            }, on_conflict='table_name,record_id').execute()
+
+            cursor.execute("""
+                UPDATE sync_deletions
+                SET cloud_deleted = TRUE, sync_status = 'synced'
+                WHERE table_name = %s AND record_id = %s
+            """, ('property_links', link_id))
         except Exception as cloud_error:
             print(f"Cloud delete queued for link {link_id}: {cloud_error}")
         
