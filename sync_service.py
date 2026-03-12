@@ -1063,7 +1063,9 @@ class ValiantLandSync:
                         if local_link and local_link.get('sync_status') == 'pending':
                             local_modified = local_link.get('modified_at')
                             if cloud_modified_dt and local_modified and cloud_modified_dt > local_modified:
-                                logger.debug(f"Conflict detected for link {link_id}; local pending but cloud newer. Skipping automatic overwrite.")
+                                logger.debug(
+                                    f"Conflict detected for link {link_id}; local pending but cloud newer. Skipping automatic overwrite."
+                                )
                             continue
 
                         should_upsert = False
@@ -1102,11 +1104,14 @@ class ValiantLandSync:
 
                             stats['links_pulled'] = stats.get('links_pulled', 0) + 1
 
+                    except Exception as link_error:
+                        logger.debug(f"Warning: Could not pull link {link.get('link_id')}: {link_error}")
+                        continue
+
                 logger.debug(f"Pulled {stats.get('links_pulled', 0)} new/changed links from cloud")
 
             except Exception as e:
                 logger.debug(f"Error pulling links: {e}")
-
             # PHASE 4: Pull property photos and documents from cloud
             try:
                 self._pull_property_files_from_cloud(cursor, stats)
