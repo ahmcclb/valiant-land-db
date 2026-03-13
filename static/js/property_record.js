@@ -104,12 +104,11 @@ function parseCurrency(value) {
 }
 
 function captureUnsavedFormState() {
-    const state = {
-        hasUnsavedChanges,
-        selectedTags: JSON.parse(JSON.stringify(selectedTags || [])),
-        mailImages: JSON.parse(JSON.stringify(mailImages || [])),
-        fields: {}
-    };
+	const state = {
+		hasUnsavedChanges,
+		selectedTags: JSON.parse(JSON.stringify(selectedTags || [])),
+		fields: {}
+	};
 
     document.querySelectorAll('#property-form input, #property-form select, #property-form textarea').forEach(el => {
         if (!el.id) return;
@@ -143,11 +142,6 @@ function restoreUnsavedFormState(state) {
     if (Array.isArray(state.selectedTags)) {
         selectedTags = JSON.parse(JSON.stringify(state.selectedTags));
         renderSelectedTags();
-    }
-
-    if (Array.isArray(state.mailImages)) {
-        mailImages = JSON.parse(JSON.stringify(state.mailImages));
-        renderMailImages();
     }
 
     if (document.getElementById('o_type')) {
