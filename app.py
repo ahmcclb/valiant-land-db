@@ -1930,17 +1930,28 @@ def delete_mail_image(p_id):
             """, (p_id,))
 
         if deleted_relative_path:
-            full_path = os.path.join(STATIC_PATH, deleted_relative_path)
+            normalized_path = deleted_relative_path.replace('\\', '/')
+            full_path = os.path.join(STATIC_PATH, normalized_path)
+
+            # Queue deletion tombstone for sync propagation of the file object
+            cursor.execute("""
+                INSERT INTO sync_deletions (table_name, record_id, deleted_at, sync_status, cloud_deleted)
+                VALUES (%s, %s, NOW(), 'pending', FALSE)
+                ON CONFLICT (table_name, record_id) DO UPDATE SET
+                    deleted_at = NOW(),
+                    sync_status = 'pending',
+                    cloud_deleted = FALSE
+            """, ('file_sync', normalized_path))
+
+            # Remove sync tracking row for this file
+            cursor.execute("""
+                DELETE FROM file_sync
+                WHERE replace(local_path, '\\\\', '/') = %s
+            """, (normalized_path,))
 
             # Remove local file if present
             if os.path.exists(full_path):
                 os.remove(full_path)
-
-            # Remove sync tracking for this file
-            cursor.execute("""
-                DELETE FROM file_sync
-                WHERE local_path = %s
-            """, (deleted_relative_path.replace('\\', '/'),))
 
         conn.commit()
         return jsonify({'success': True})

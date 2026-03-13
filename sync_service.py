@@ -563,8 +563,17 @@ class ValiantLandSync:
             
             for prop in pending_props:
                 full_dict = dict(prop)
-                prop_dict = {k: v for k, v in full_dict.items() if k in properties_columns}
-                prop_dict = {k: v for k, v in prop_dict.items() if v is not None and v != ''}
+                raw_prop_dict = {k: v for k, v in full_dict.items() if k in properties_columns}
+
+                # Keep explicit NULLs for fields that must be clearable in cloud
+                nullable_clear_fields = {'p_mail_image_1', 'p_mail_image_2'}
+
+                prop_dict = {}
+                for k, v in raw_prop_dict.items():
+                    if k in nullable_clear_fields:
+                        prop_dict[k] = v
+                    elif v is not None and v != '':
+                        prop_dict[k] = v
                 
                 numeric_fields = ['p_price', 'p_comp_market_value', 'p_county_market_value', 
                                  'p_county_assessed_value', 'p_sale_price', 'p_hoa', 
@@ -832,6 +841,31 @@ class ValiantLandSync:
 
                     for deletion in cloud_deletions.data:
                         record_id = deletion['record_id']
+                        
+                        if table_name == 'file_sync':
+                            normalized_path = str(record_id).replace('\\', '/')
+
+                            cursor.execute("""
+                                DELETE FROM file_sync
+                                WHERE replace(local_path, '\\\\', '/') = %s
+                                   OR replace(coalesce(cloud_path, ''), '\\\\', '/') = %s
+                            """, (normalized_path, normalized_path))
+
+                            self._delete_local_file_and_prune(normalized_path)
+
+                            cursor.execute("""
+                                INSERT INTO sync_deletions (table_name, record_id, deleted_at, sync_status, cloud_deleted)
+                                VALUES (%s, %s, %s, 'synced', TRUE)
+                                ON CONFLICT (table_name, record_id) DO UPDATE SET
+                                    deleted_at = EXCLUDED.deleted_at,
+                                    sync_status = 'synced',
+                                    cloud_deleted = TRUE
+                            """, (
+                                table_name,
+                                record_id,
+                                deletion['deleted_at']
+                            ))
+                            continue
 
                         file_path = None
                         if table_name in ('property_photos', 'property_documents'):
